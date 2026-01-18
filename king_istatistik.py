@@ -18,17 +18,49 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7m
 def inject_custom_css():
     st.markdown("""
     <style>
+        /* --- GENEL --- */
         .stApp { background-color: #0e1117; }
         h1 { color: #FFD700 !important; text-align: center; text-shadow: 2px 2px 4px #000000; font-family: 'Arial Black', sans-serif; margin-bottom: 10px; }
         h2, h3 { color: #ff4b4b !important; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        
+        /* --- BUTONLAR VE GİRİŞLER --- */
         .stButton > button { width: 100% !important; height: auto !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; font-size: 16px; padding: 12px 20px; white-space: nowrap !important; display: flex; align-items: center; justify-content: center; }
         .stButton > button:hover { background-color: #ff0000; border-color: white; transform: scale(1.01); }
         div[data-testid="stNumberInput"] button { background-color: #444 !important; color: white !important; border-color: #666 !important; min-height: 40px; min-width: 40px; }
-        @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
         div[data-testid="stMetric"] { background-color: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; text-align: center; }
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
-        #MainMenu {visibility: visible;}
-        footer {visibility: hidden;}
+        @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
+
+        /* --- KRİTİK ARAYÜZ TEMİZLİĞİ --- */
+        
+        /* 1. HEADER AYARLARI */
+        header[data-testid="stHeader"] {
+            background: transparent !important;
+        }
+
+        /* 2. SOL ÜST MENÜ BUTONU (HAMBURGER) */
+        button[kind="header"] {
+            display: block !important;
+            visibility: visible !important;
+            color: #FFD700 !important; 
+            background-color: transparent !important;
+            z-index: 99999 !important;
+        }
+        
+        /* 3. SAĞ ÜSTTEKİLERİ GİZLE */
+        [data-testid="stToolbar"] { display: none !important; }
+        [data-testid="stHeaderActionElements"] { display: none !important; }
+        
+        /* 4. TEPEDEKİ RENKLİ ÇİZGİYİ KALDIR */
+        [data-testid="stDecoration"] { display: none !important; }
+        
+        /* 5. FOOTER'I KALDIR */
+        footer { display: none !important; }
+        
+        /* 6. SAĞ ALTTAKİ "MANAGE APP" YOK ET */
+        .viewerBadge_container__1QSob { display: none !important; }
+        div[class*="viewerBadge"] { display: none !important; }
+        
     </style>
     """, unsafe_allow_html=True)
 
@@ -102,7 +134,7 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (0 PUAN = KAZANIR GÜNCELLEMESİ)
+# 2. İSTATİSTİK MOTORU
 # =============================================================================
 
 def istatistikleri_hesapla():
@@ -121,7 +153,6 @@ def istatistikleri_hesapla():
     current_players = []
     current_match_data = {} 
     
-    # Maç özel değişkenleri
     is_king_game = False
     king_winner_name = None
 
@@ -129,7 +160,6 @@ def istatistikleri_hesapla():
         if not row: continue
         first_cell = str(row[0])
         
-        # 1. Yeni Maç Başlangıcı
         if first_cell.startswith("--- MAÇ:"):
             current_players = []
             current_match_data = {"baslik": first_cell, "skorlar": [], "oyuncular": []}
@@ -137,7 +167,6 @@ def istatistikleri_hesapla():
             king_winner_name = None
             continue
             
-        # 2. Oyuncular
         if first_cell == "OYUN TÜRÜ":
             for col_idx in range(1, len(row)):
                 p_name = row[col_idx].strip()
@@ -152,7 +181,6 @@ def istatistikleri_hesapla():
                         }
             continue
 
-        # 3. Skor Verisi ve King Kontrolü
         base_name = first_cell.split(" #")[0]
         
         if "KING" in first_cell:
@@ -177,14 +205,12 @@ def istatistikleri_hesapla():
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
                             
-                            # Ceza Analizi (SADECE normal oyunlarda)
                             if score < 0 and base_name in OYUN_KURALLARI and not is_king_game:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
                                 stats["cezalar"][base_name] += int(score/birim)
                 except: continue
 
-        # 4. Maç Sonu Değerlendirmesi
         if first_cell == "TOPLAM":
             current_match_data["toplamlar"] = row
             match_history.append(current_match_data)
@@ -195,23 +221,15 @@ def istatistikleri_hesapla():
                     stats["mac_sayisi"] += 1
                     mac_puani = stats["gecici_mac_puani"]
                     
-                    # --- WIN RATE (BATMA/ÇIKMA) MANTIĞI ---
                     if is_king_game and king_winner_name:
-                        # King yapılmışsa sadece Yapan kazanır
-                        if p_name == king_winner_name:
-                            stats["pozitif_mac_sayisi"] += 1
-                        # Diğerleri kaybeder
+                        if p_name == king_winner_name: stats["pozitif_mac_sayisi"] += 1
                     else:
-                        # Normal maç: Puan 0 veya büyükse KAZANIR (GÜNCELLENDİ)
-                        if mac_puani >= 0:
-                            stats["pozitif_mac_sayisi"] += 1
+                        if mac_puani >= 0: stats["pozitif_mac_sayisi"] += 1
                     
-                    # --- REKORLAR ---
                     if not is_king_game:
                         if mac_puani > stats["rekor_max"]: stats["rekor_max"] = mac_puani
                         if mac_puani < stats["rekor_min"]: stats["rekor_min"] = mac_puani
                     
-                    # --- KOMANDİT ---
                     others = [op for op in current_players if op != p_name]
                     for op in others:
                         if op not in stats["partnerler"]:
@@ -225,7 +243,6 @@ def istatistikleri_hesapla():
                             if p_name == king_winner_name: p_stat["beraber_kazanma"] += 1
                             else: p_stat["beraber_kaybetme"] += 1
                         else:
-                            # Komanditlikte de >= 0 kazanma sayılır
                             if mac_puani >= 0: p_stat["beraber_kazanma"] += 1
                             else: p_stat["beraber_kaybetme"] += 1
 
@@ -556,7 +573,7 @@ def profile_interface():
         c3.metric("Başarı %", f"%{win_rate:.1f}")
 
 # =============================================================================
-# 8. YÖNETİM PANELİ (REVİZE EDİLDİ: BUTONLA SİLME VE DOĞRULAMA)
+# 8. YÖNETİM PANELİ (GÜNCELLENMİŞ)
 # =============================================================================
 
 def admin_panel():
@@ -564,28 +581,38 @@ def admin_panel():
     users_df = get_users_from_sheet()
     current_user_role = st.session_state["role"]
     
-    # KULLANICI EKLEME / GÜNCELLEME (Silme buradan kaldırıldı)
     with st.form("user_add_update"):
         st.subheader("Kullanıcı Ekle / Güncelle")
         c1, c2, c3 = st.columns(3)
         u_name = c1.text_input("Kullanıcı Adı")
         u_pass = c2.text_input("Şifre")
+        
+        # Patron ise seçim kutusunu göster, Admin ise gösterme ve 'user' ata
         if current_user_role == "patron":
             u_role = c3.selectbox("Yetki", ["user", "admin", "patron"])
         else:
-            u_role = c3.selectbox("Yetki", ["user"], disabled=True)
+            u_role = "user" # Adminler için varsayılan ve gizli
         
         if st.form_submit_button("Kaydet"):
             if u_name:
-                pwd = u_pass if u_pass else "1234"
-                res = update_user_in_sheet(u_name, u_name, pwd, u_role, delete=False)
-                if res == "added": st.success(f"{u_name} eklendi.")
-                elif res == "updated": st.success(f"{u_name} güncellendi.")
-                st.rerun()
+                # GÜVENLİK KONTROLÜ: Adminler üst yetkileri güncelleyemez
+                target_user_row = users_df[users_df['Username'] == u_name]
+                target_role = "user" # Varsayılan
+                if not target_user_row.empty:
+                    target_role = target_user_row.iloc[0]['Role']
+                
+                # Eğer Admin işlem yapıyorsa ve hedef Patron veya Admin ise BLOKLA
+                if current_user_role == "admin" and target_role in ["patron", "admin"] and not target_user_row.empty:
+                    st.error("❌ Yetkisiz İşlem: Yöneticilerin veya Patronların bilgilerini değiştiremezsiniz!")
+                else:
+                    pwd = u_pass if u_pass else "1234"
+                    res = update_user_in_sheet(u_name, u_name, pwd, u_role, delete=False)
+                    if res == "added": st.success(f"{u_name} eklendi.")
+                    elif res == "updated": st.success(f"{u_name} güncellendi.")
+                    st.rerun()
 
     st.divider()
     
-    # PATRON ÖZEL: OYUNCU RÖNTGENİ
     if current_user_role == "patron":
         st.subheader("🕵️ Oyuncu Röntgeni")
         user_list = users_df['Username'].tolist() if not users_df.empty and 'Username' in users_df.columns else []
@@ -604,10 +631,9 @@ def admin_panel():
     
     st.divider()
 
-    # KULLANICI LİSTESİ VE SİLME BUTONLARI
     st.subheader("📋 Kullanıcı Listesi")
     
-    # Silme Onay Kutusu (En üstte görünür)
+    # Silme Onay Kutusu
     if "pending_delete_user" in st.session_state and st.session_state["pending_delete_user"]:
         target = st.session_state["pending_delete_user"]
         st.error(f"⚠️ **{target}** kullanıcısını silmek üzeresiniz. Bu işlem geri alınamaz!")
@@ -622,17 +648,14 @@ def admin_panel():
             del st.session_state["pending_delete_user"]
             st.rerun()
     
-    # Listeyi Yazdır
     if not users_df.empty and 'Username' in users_df.columns:
         for index, row in users_df.iterrows():
             col_info, col_action = st.columns([4, 1])
             with col_info:
                 st.write(f"**{row['Username']}** *(Yetki: {row['Role']})*")
             
-            # Sadece Patron silme butonunu görür
             if current_user_role == "patron":
                 with col_action:
-                    # Kendi kendini silemez
                     if row['Username'] != st.session_state["username"]:
                         if st.button("🗑️ Sil", key=f"del_btn_{row['Username']}"):
                             st.session_state["pending_delete_user"] = row['Username']
