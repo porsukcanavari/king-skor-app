@@ -12,55 +12,23 @@ import json
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS (MOBİL MENÜ KURTARMA OPERASYONU)
+# 0. GÖRSEL AYARLAR VE CSS
 # =============================================================================
 
 def inject_custom_css():
     st.markdown("""
     <style>
-        /* --- GENEL --- */
         .stApp { background-color: #0e1117; }
         h1 { color: #FFD700 !important; text-align: center; text-shadow: 2px 2px 4px #000000; font-family: 'Arial Black', sans-serif; margin-bottom: 10px; }
         h2, h3 { color: #ff4b4b !important; border-bottom: 2px solid #333; padding-bottom: 10px; }
-        
-        /* --- BUTONLAR VE GİRİŞLER --- */
         .stButton > button { width: 100% !important; height: auto !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; font-size: 16px; padding: 12px 20px; white-space: nowrap !important; display: flex; align-items: center; justify-content: center; }
         .stButton > button:hover { background-color: #ff0000; border-color: white; transform: scale(1.01); }
         div[data-testid="stNumberInput"] button { background-color: #444 !important; color: white !important; border-color: #666 !important; min-height: 40px; min-width: 40px; }
+        @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
         div[data-testid="stMetric"] { background-color: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; text-align: center; }
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
-        @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
-
-        /* --- KRİTİK ARAYÜZ TEMİZLİĞİ --- */
-        
-        /* 1. HEADER AYARLARI: Header kalsın ama şeffaf olsun */
-        header[data-testid="stHeader"] {
-            background: transparent !important;
-        }
-
-        /* 2. SOL ÜST MENÜ BUTONU (HAMBURGER): Bunu ZORLA gösteriyoruz */
-        button[kind="header"] {
-            display: block !important;
-            visibility: visible !important;
-            color: #FFD700 !important; /* Altın sarısı yapıyoruz ki siyah zeminde parlasın */
-            background-color: transparent !important;
-            z-index: 99999 !important;
-        }
-        
-        /* 3. SAĞ ÜSTTEKİLERİ (Toolbar, Profil, 3 Nokta) GİZLE */
-        [data-testid="stToolbar"] { display: none !important; }
-        [data-testid="stHeaderActionElements"] { display: none !important; }
-        
-        /* 4. TEPEDEKİ RENKLİ ÇİZGİYİ KALDIR */
-        [data-testid="stDecoration"] { display: none !important; }
-        
-        /* 5. FOOTER'I KALDIR */
-        footer { display: none !important; }
-        
-        /* 6. SAĞ ALTTAKİ "MANAGE APP" BUTONU (Viewer Badge) - YOK ET */
-        .viewerBadge_container__1QSob { display: none !important; }
-        div[class*="viewerBadge"] { display: none !important; }
-        
+        #MainMenu {visibility: visible;}
+        footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -134,7 +102,7 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (GHOST KING MANTIĞI)
+# 2. İSTATİSTİK MOTORU (0 PUAN = KAZANIR GÜNCELLEMESİ)
 # =============================================================================
 
 def istatistikleri_hesapla():
@@ -234,7 +202,7 @@ def istatistikleri_hesapla():
                             stats["pozitif_mac_sayisi"] += 1
                         # Diğerleri kaybeder
                     else:
-                        # Normal maç: Puan 0 veya büyükse KAZANIR
+                        # Normal maç: Puan 0 veya büyükse KAZANIR (GÜNCELLENDİ)
                         if mac_puani >= 0:
                             stats["pozitif_mac_sayisi"] += 1
                     
@@ -257,6 +225,7 @@ def istatistikleri_hesapla():
                             if p_name == king_winner_name: p_stat["beraber_kazanma"] += 1
                             else: p_stat["beraber_kaybetme"] += 1
                         else:
+                            # Komanditlikte de >= 0 kazanma sayılır
                             if mac_puani >= 0: p_stat["beraber_kazanma"] += 1
                             else: p_stat["beraber_kaybetme"] += 1
 
@@ -408,6 +377,7 @@ def game_interface():
             king_maker = st.selectbox("King'i kim yaptı?", secili_oyuncular)
             
             if st.button("Onayla ve Bitir"):
+                # King Mantığı: Herkese 0 puan yaz
                 king_scores = {p: 0 for p in secili_oyuncular}
                 row_name = f"👑 KING ({king_maker})"
                 new_row = pd.DataFrame([king_scores], index=[row_name])
