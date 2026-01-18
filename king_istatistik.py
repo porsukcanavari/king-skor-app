@@ -5,6 +5,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import os
 import json
+import time
 
 # =============================================================================
 # 🚨 SABİT AYARLAR VE LİNKLER
@@ -31,33 +32,13 @@ def inject_custom_css():
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
         @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
 
-        /* --- KRİTİK ARAYÜZ TEMİZLİĞİ --- */
-        
-        /* 1. HEADER AYARLARI */
-        header[data-testid="stHeader"] {
-            background: transparent !important;
-        }
-
-        /* 2. SOL ÜST MENÜ BUTONU (HAMBURGER) */
-        button[kind="header"] {
-            display: block !important;
-            visibility: visible !important;
-            color: #FFD700 !important; 
-            background-color: transparent !important;
-            z-index: 99999 !important;
-        }
-        
-        /* 3. SAĞ ÜSTTEKİLERİ GİZLE */
+        /* --- ARAYÜZ TEMİZLİĞİ --- */
+        header[data-testid="stHeader"] { background: transparent !important; }
+        button[kind="header"] { display: block !important; visibility: visible !important; color: #FFD700 !important; background-color: transparent !important; z-index: 99999 !important; }
         [data-testid="stToolbar"] { display: none !important; }
         [data-testid="stHeaderActionElements"] { display: none !important; }
-        
-        /* 4. TEPEDEKİ RENKLİ ÇİZGİYİ KALDIR */
         [data-testid="stDecoration"] { display: none !important; }
-        
-        /* 5. FOOTER'I KALDIR */
         footer { display: none !important; }
-        
-        /* 6. SAĞ ALTTAKİ "MANAGE APP" YOK ET */
         .viewerBadge_container__1QSob { display: none !important; }
         div[class*="viewerBadge"] { display: none !important; }
         
@@ -131,6 +112,39 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         return False
     except Exception as e:
         st.error(f"Kayıt Hatası: {e}")
+        return False
+
+def delete_match_from_sheet(match_title):
+    """Belirtilen başlığa sahip maçı Maclar sayfasından siler."""
+    try:
+        wb = get_sheet_by_url()
+        sheet = wb.worksheet("Maclar")
+        all_values = sheet.get_all_values()
+        
+        start_index = -1
+        end_index = -1
+        
+        # Maçın başlangıç ve bitiş satırlarını bul
+        for i, row in enumerate(all_values):
+            if row and str(row[0]) == match_title:
+                start_index = i + 1 # gspread 1-based index kullanır
+                
+                # Bitiş satırını (--- çizgisi) bul
+                for j in range(i, len(all_values)):
+                    if all_values[j] and str(all_values[j][0]).startswith("----------------"):
+                        end_index = j + 1
+                        break
+                break
+        
+        if start_index != -1 and end_index != -1:
+            # Gspread delete_rows(start, end)
+            sheet.delete_rows(start_index, end_index)
+            return True
+        else:
+            return False
+            
+    except Exception as e:
+        st.error(f"Silme Hatası: {e}")
         return False
 
 # =============================================================================
@@ -404,7 +418,7 @@ def game_interface():
 
         st.markdown("---")
         
-        # VERİ GİRİŞİ (AKILLI LİMİT)
+        # VERİ GİRİŞİ
         mevcut_oyun_index = st.session_state["game_index"]
         if mevcut_oyun_index >= len(OYUN_SIRALAMASI): mevcut_oyun_index = len(OYUN_SIRALAMASI) - 1
 
@@ -573,7 +587,7 @@ def profile_interface():
         c3.metric("Başarı %", f"%{win_rate:.1f}")
 
 # =============================================================================
-# 8. YÖNETİM PANELİ (GÜNCELLENMİŞ)
+# 8. YÖNETİM PANELİ (GÜNCELLENMİŞ: MAÇ SİLME + YETKİ KISITI)
 # =============================================================================
 
 def admin_panel():
@@ -581,29 +595,27 @@ def admin_panel():
     users_df = get_users_from_sheet()
     current_user_role = st.session_state["role"]
     
+    # 1. KULLANICI EKLEME / GÜNCELLEME
     with st.form("user_add_update"):
         st.subheader("Kullanıcı Ekle / Güncelle")
         c1, c2, c3 = st.columns(3)
         u_name = c1.text_input("Kullanıcı Adı")
         u_pass = c2.text_input("Şifre")
         
-        # Patron ise seçim kutusunu göster, Admin ise gösterme ve 'user' ata
         if current_user_role == "patron":
             u_role = c3.selectbox("Yetki", ["user", "admin", "patron"])
         else:
-            u_role = "user" # Adminler için varsayılan ve gizli
+            u_role = "user" 
         
         if st.form_submit_button("Kaydet"):
             if u_name:
-                # GÜVENLİK KONTROLÜ: Adminler üst yetkileri güncelleyemez
                 target_user_row = users_df[users_df['Username'] == u_name]
-                target_role = "user" # Varsayılan
+                target_role = "user"
                 if not target_user_row.empty:
                     target_role = target_user_row.iloc[0]['Role']
                 
-                # Eğer Admin işlem yapıyorsa ve hedef Patron veya Admin ise BLOKLA
                 if current_user_role == "admin" and target_role in ["patron", "admin"] and not target_user_row.empty:
-                    st.error("❌ Yetkisiz İşlem: Yöneticilerin veya Patronların bilgilerini değiştiremezsiniz!")
+                    st.error("❌ Yetkisiz İşlem: Yöneticilerin bilgilerini değiştiremezsiniz!")
                 else:
                     pwd = u_pass if u_pass else "1234"
                     res = update_user_in_sheet(u_name, u_name, pwd, u_role, delete=False)
@@ -613,38 +625,55 @@ def admin_panel():
 
     st.divider()
     
-    if current_user_role == "patron":
-        st.subheader("🕵️ Oyuncu Röntgeni")
-        user_list = users_df['Username'].tolist() if not users_df.empty and 'Username' in users_df.columns else []
-        target_user = st.selectbox("İncelenecek Oyuncu:", user_list)
-        if target_user:
-            stats, _ = istatistikleri_hesapla()
-            if stats and target_user in stats:
-                t_stats = stats[target_user]
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Puan", t_stats['toplam_puan'])
-                t_wr = (t_stats['pozitif_mac_sayisi'] / t_stats['mac_sayisi']) * 100 if t_stats['mac_sayisi'] > 0 else 0
-                c2.metric("Win Rate", f"%{t_wr:.1f}")
-                c3.metric("Rekor", t_stats['rekor_max'])
-            else:
-                st.warning("Veri yok.")
+    # 2. MAÇ YÖNETİMİ (YENİ ÖZELLİK: MAÇ SİLME)
+    st.subheader("🗑️ Maç Yönetimi")
+    _, match_history = istatistikleri_hesapla()
     
+    if match_history:
+        # Maç listesi (Ters sıralı)
+        match_options = [f"{m['baslik']}" for m in match_history][::-1]
+        
+        # Seçim kutusu
+        selected_delete_match = st.selectbox("Silinecek Maçı Seçin:", match_options, key="del_match_select")
+        
+        # Silme butonu
+        if st.button("Seçili Maçı Sil", type="primary"):
+            st.session_state["pending_delete_match"] = selected_delete_match
+            st.rerun()
+            
+        # Maç Silme Onayı
+        if "pending_delete_match" in st.session_state and st.session_state["pending_delete_match"]:
+            match_to_del = st.session_state["pending_delete_match"]
+            st.error(f"⚠️ **{match_to_del}** kaydını silmek üzeresiniz. Bu işlem geri alınamaz!")
+            col_m1, col_m2 = st.columns(2)
+            if col_m1.button("✅ Evet, Maçı Sil"):
+                if delete_match_from_sheet(match_to_del):
+                    st.success("Maç başarıyla silindi.")
+                    del st.session_state["pending_delete_match"]
+                    time.sleep(1) # Kullanıcı mesajı görsün
+                    st.rerun()
+            if col_m2.button("❌ İptal", key="cancel_match_del"):
+                del st.session_state["pending_delete_match"]
+                st.rerun()
+    else:
+        st.info("Silinecek maç bulunamadı.")
+
     st.divider()
 
+    # 3. KULLANICI LİSTESİ VE SİLME
     st.subheader("📋 Kullanıcı Listesi")
     
-    # Silme Onay Kutusu
     if "pending_delete_user" in st.session_state and st.session_state["pending_delete_user"]:
         target = st.session_state["pending_delete_user"]
-        st.error(f"⚠️ **{target}** kullanıcısını silmek üzeresiniz. Bu işlem geri alınamaz!")
+        st.error(f"⚠️ **{target}** kullanıcısını silmek üzeresiniz!")
         col_conf1, col_conf2 = st.columns(2)
-        if col_conf1.button("✅ Evet, Sil"):
+        if col_conf1.button("✅ Evet, Kullanıcıyı Sil"):
             res = update_user_in_sheet(target, target, "xxxx", "user", delete=True)
             if res == "deleted":
-                st.success(f"{target} başarıyla silindi.")
+                st.success(f"{target} silindi.")
                 del st.session_state["pending_delete_user"]
                 st.rerun()
-        if col_conf2.button("❌ İptal"):
+        if col_conf2.button("❌ İptal", key="cancel_user_del"):
             del st.session_state["pending_delete_user"]
             st.rerun()
     
