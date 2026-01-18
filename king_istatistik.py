@@ -552,7 +552,7 @@ def admin_panel():
 # 9. ANA UYGULAMA ÇATISI (MAIN)
 # =============================================================================
 
-st.set_page_config(page_title="King Pro Ultimate", layout="wide", page_icon="👑")
+st.set_page_config(page_title="KİKU (King İstatistik Kurumu)", layout="wide", page_icon="👑")
 inject_custom_css()
 
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
@@ -578,3 +578,4 @@ else:
     elif choice == "📊 İstatistikler": stats_interface()
     elif choice == "👤 Profilim": profile_interface()
     elif choice == "🛠️ Yönetim Paneli": admin_panel()
+
