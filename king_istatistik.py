@@ -12,7 +12,7 @@ import json
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS (TEMİZLİK OPERASYONU YAPILDI)
+# 0. GÖRSEL AYARLAR VE CSS (MOBİL DÜZELTMELERİ YAPILDI)
 # =============================================================================
 
 def inject_custom_css():
@@ -39,15 +39,43 @@ def inject_custom_css():
         div[data-testid="stMetric"] { background-color: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; text-align: center; }
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
 
-        /* --- STREAMLIT ARAYÜZ TEMİZLİĞİ (GİZLEME KOMUTLARI) --- */
-        #MainMenu {visibility: hidden;} /* Sağ üstteki 3 nokta menüsü */
-        header {visibility: hidden;} /* En tepedeki boşluk ve deploy butonu */
-        footer {visibility: hidden;} /* En alttaki 'Made with Streamlit' yazısı */
-        [data-testid="stToolbar"] {visibility: hidden;} /* Sağ üst araç çubuğu */
-        [data-testid="stDecoration"] {display: none;} /* Tepedeki renkli çizgi */
-        [data-testid="stStatusWidget"] {visibility: hidden;} /* Sağ üstteki 'Running' animasyonu */
+        /* --- STREAMLIT ARAYÜZ TEMİZLİĞİ (GÜNCELLENDİ) --- */
         
-        /* Yan menüyü biraz aşağı itelim ki header gidince yukarı yapışmasın */
+        /* 1. Header'ı GİZLEME (Menü butonu görünsün diye), sadece içindekileri temizle */
+        header[data-testid="stHeader"] {
+            background-color: rgba(0,0,0,0); /* Şeffaf */
+            z-index: 1;
+        }
+        
+        /* 2. Renkli Çizgiyi Kaldır */
+        [data-testid="stDecoration"] {
+            display: none;
+        }
+        
+        /* 3. Sağ Üstteki Araçları (Toolbar, Deploy vs) Gizle */
+        [data-testid="stToolbar"] {
+            visibility: hidden;
+            display: none;
+        }
+        
+        /* 4. Sağ Üstteki 3 Nokta Menüsü */
+        #MainMenu {
+            visibility: hidden;
+            display: none;
+        }
+        
+        /* 5. Alt Kısımdaki "Made with Streamlit" */
+        footer {
+            visibility: hidden;
+            display: none;
+        }
+        
+        /* 6. SAĞ ALT KÖŞEDEKİ "MANAGE APP" veya "VIEWER BADGE" (Özel Vuruş) */
+        .viewerBadge_container__1QSob { display: none !important; }
+        div[class*="viewerBadge"] { display: none !important; }
+        .stDeployButton { display: none !important; }
+        
+        /* Sidebar ayarı */
         section[data-testid="stSidebar"] { top: 0px !important; } 
         
     </style>
