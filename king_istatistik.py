@@ -12,23 +12,44 @@ import json
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS
+# 0. GÖRSEL AYARLAR VE CSS (TEMİZLİK OPERASYONU YAPILDI)
 # =============================================================================
 
 def inject_custom_css():
     st.markdown("""
     <style>
+        /* GENEL SAYFA RENGİ */
         .stApp { background-color: #0e1117; }
+        
+        /* BAŞLIKLAR */
         h1 { color: #FFD700 !important; text-align: center; text-shadow: 2px 2px 4px #000000; font-family: 'Arial Black', sans-serif; margin-bottom: 10px; }
         h2, h3 { color: #ff4b4b !important; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        
+        /* BUTONLAR */
         .stButton > button { width: 100% !important; height: auto !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; font-size: 16px; padding: 12px 20px; white-space: nowrap !important; display: flex; align-items: center; justify-content: center; }
         .stButton > button:hover { background-color: #ff0000; border-color: white; transform: scale(1.01); }
+        
+        /* GİRİŞ KUTULARI */
         div[data-testid="stNumberInput"] button { background-color: #444 !important; color: white !important; border-color: #666 !important; min-height: 40px; min-width: 40px; }
+        
+        /* MOBİL */
         @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
+        
+        /* İSTATİSTİK KUTULARI */
         div[data-testid="stMetric"] { background-color: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; text-align: center; }
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
-        #MainMenu {visibility: visible;}
-        footer {visibility: hidden;}
+
+        /* --- STREAMLIT ARAYÜZ TEMİZLİĞİ (GİZLEME KOMUTLARI) --- */
+        #MainMenu {visibility: hidden;} /* Sağ üstteki 3 nokta menüsü */
+        header {visibility: hidden;} /* En tepedeki boşluk ve deploy butonu */
+        footer {visibility: hidden;} /* En alttaki 'Made with Streamlit' yazısı */
+        [data-testid="stToolbar"] {visibility: hidden;} /* Sağ üst araç çubuğu */
+        [data-testid="stDecoration"] {display: none;} /* Tepedeki renkli çizgi */
+        [data-testid="stStatusWidget"] {visibility: hidden;} /* Sağ üstteki 'Running' animasyonu */
+        
+        /* Yan menüyü biraz aşağı itelim ki header gidince yukarı yapışmasın */
+        section[data-testid="stSidebar"] { top: 0px !important; } 
+        
     </style>
     """, unsafe_allow_html=True)
 
@@ -102,7 +123,7 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (0 PUAN = KAZANIR GÜNCELLEMESİ)
+# 2. İSTATİSTİK MOTORU
 # =============================================================================
 
 def istatistikleri_hesapla():
@@ -121,7 +142,6 @@ def istatistikleri_hesapla():
     current_players = []
     current_match_data = {} 
     
-    # Maç özel değişkenleri
     is_king_game = False
     king_winner_name = None
 
@@ -129,7 +149,6 @@ def istatistikleri_hesapla():
         if not row: continue
         first_cell = str(row[0])
         
-        # 1. Yeni Maç Başlangıcı
         if first_cell.startswith("--- MAÇ:"):
             current_players = []
             current_match_data = {"baslik": first_cell, "skorlar": [], "oyuncular": []}
@@ -137,7 +156,6 @@ def istatistikleri_hesapla():
             king_winner_name = None
             continue
             
-        # 2. Oyuncular
         if first_cell == "OYUN TÜRÜ":
             for col_idx in range(1, len(row)):
                 p_name = row[col_idx].strip()
@@ -152,7 +170,6 @@ def istatistikleri_hesapla():
                         }
             continue
 
-        # 3. Skor Verisi ve King Kontrolü
         base_name = first_cell.split(" #")[0]
         
         if "KING" in first_cell:
@@ -177,14 +194,12 @@ def istatistikleri_hesapla():
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
                             
-                            # Ceza Analizi (SADECE normal oyunlarda)
                             if score < 0 and base_name in OYUN_KURALLARI and not is_king_game:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
                                 stats["cezalar"][base_name] += int(score/birim)
                 except: continue
 
-        # 4. Maç Sonu Değerlendirmesi
         if first_cell == "TOPLAM":
             current_match_data["toplamlar"] = row
             match_history.append(current_match_data)
@@ -195,23 +210,15 @@ def istatistikleri_hesapla():
                     stats["mac_sayisi"] += 1
                     mac_puani = stats["gecici_mac_puani"]
                     
-                    # --- WIN RATE (BATMA/ÇIKMA) MANTIĞI ---
                     if is_king_game and king_winner_name:
-                        # King yapılmışsa sadece Yapan kazanır
-                        if p_name == king_winner_name:
-                            stats["pozitif_mac_sayisi"] += 1
-                        # Diğerleri kaybeder
+                        if p_name == king_winner_name: stats["pozitif_mac_sayisi"] += 1
                     else:
-                        # Normal maç: Puan 0 veya büyükse KAZANIR (GÜNCELLENDİ)
-                        if mac_puani >= 0:
-                            stats["pozitif_mac_sayisi"] += 1
+                        if mac_puani >= 0: stats["pozitif_mac_sayisi"] += 1
                     
-                    # --- REKORLAR ---
                     if not is_king_game:
                         if mac_puani > stats["rekor_max"]: stats["rekor_max"] = mac_puani
                         if mac_puani < stats["rekor_min"]: stats["rekor_min"] = mac_puani
                     
-                    # --- KOMANDİT ---
                     others = [op for op in current_players if op != p_name]
                     for op in others:
                         if op not in stats["partnerler"]:
@@ -225,7 +232,6 @@ def istatistikleri_hesapla():
                             if p_name == king_winner_name: p_stat["beraber_kazanma"] += 1
                             else: p_stat["beraber_kaybetme"] += 1
                         else:
-                            # Komanditlikte de >= 0 kazanma sayılır
                             if mac_puani >= 0: p_stat["beraber_kazanma"] += 1
                             else: p_stat["beraber_kaybetme"] += 1
 
@@ -377,7 +383,6 @@ def game_interface():
             king_maker = st.selectbox("King'i kim yaptı?", secili_oyuncular)
             
             if st.button("Onayla ve Bitir"):
-                # King Mantığı: Herkese 0 puan yaz
                 king_scores = {p: 0 for p in secili_oyuncular}
                 row_name = f"👑 KING ({king_maker})"
                 new_row = pd.DataFrame([king_scores], index=[row_name])
