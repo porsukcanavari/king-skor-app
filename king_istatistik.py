@@ -260,7 +260,7 @@ def game_interface():
         
         st.markdown("### 2. Kadro Seçimi")
         secilenler = st.multiselect(
-            "4 oyuncu seçiniz:", 
+            "4 oyuncu seçin:", 
             options=tum_oyuncular,
             default=tum_oyuncular[:4] if len(tum_oyuncular) >= 4 else None
         )
@@ -425,7 +425,7 @@ def profile_interface():
 
     # --- PARTNER ANALİZİ (YENİ ÖZELLİK) ---
     st.divider()
-    st.subheader("🤝 Komanditlik Durumu (Kim Uğurlu?)")
+    st.subheader("🤝 Komanditlik Durumu (Kim Sana Yarıyor?)")
     
     partners = my_stats['partnerler']
     if partners:
@@ -455,11 +455,11 @@ def profile_interface():
             col_b, col_w = st.columns(2)
             # Eğer kazanma oranı %50'den büyükse yeşil, yoksa nötr
             if best['Kazanma %'] >= 50:
-                col_b.success(f"🍀 En Uğurlu: **{best['Partner']}**\n(Beraberken kazanma oranı: %{best['Kazanma %']:.1f})")
+                col_b.success(f"🍀 En Uğurlu: **{best['Komandit']}**\n(Beraberken kazanma oranı: %{best['Kazanma %']:.1f})")
             else:
-                col_b.info(f"🍀 En Uğurlu: **{best['Partner']}**\n(Beraberken kazanma oranı: %{best['Kazanma %']:.1f})")
+                col_b.info(f"🍀 En Uğurlu: **{best['Komandit']}**\n(Beraberken kazanma oranı: %{best['Kazanma %']:.1f})")
                 
-            col_w.error(f"💀 En Uğursuz: **{worst['Partner']}**\n(Beraberken kazanma oranı: %{worst['Kazanma %']:.1f})")
+            col_w.error(f"💀 En Uğursuz: **{worst['Komandit']}**\n(Beraberken kazanma oranı: %{worst['Kazanma %']:.1f})")
         
         st.dataframe(df_p.style.format({"Kazanma %": "{:.1f}%"}), use_container_width=True)
     else:
@@ -499,7 +499,7 @@ def admin_panel():
     # --- PATRON ÖZEL: OYUNCU ANALİZİ (YENİ) ---
     if current_user_role == "patron":
         st.subheader("🕵️ Patron Özel: Oyuncu Röntgeni")
-        st.info("İstediğin oyuncuyu seçip profilini ve komandit analizlerini görebilirsin.")
+        st.info("İstediğin oyuncuyu seçip profilini ve partner analizlerini görebilirsin.")
         
         target_user = st.selectbox("İncelenecek Oyuncu:", list(users.keys()))
         
@@ -552,7 +552,7 @@ def admin_panel():
 # 9. ANA UYGULAMA ÇATISI (MAIN)
 # =============================================================================
 
-st.set_page_config(page_title="KİKU (King İstatistik Kurumu)", layout="wide", page_icon="👑")
+st.set_page_config(page_title="King İstatistik Kurumu", layout="wide", page_icon="👑")
 inject_custom_css()
 
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
@@ -563,7 +563,7 @@ else:
     with st.sidebar:
         st.markdown(f"### 👑 {st.session_state['username']}")
         st.caption(f"Yetki: {st.session_state['role'].upper()}")
-
+        st.caption("*(Telefondaysan sol üstten menüyü aç)*")
         
         menu = ["📊 İstatistikler", "👤 Profilim"]
         if st.session_state["role"] in ["admin", "patron"]:
@@ -578,4 +578,3 @@ else:
     elif choice == "📊 İstatistikler": stats_interface()
     elif choice == "👤 Profilim": profile_interface()
     elif choice == "🛠️ Yönetim Paneli": admin_panel()
-
