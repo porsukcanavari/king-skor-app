@@ -7,11 +7,10 @@ import os
 import json
 
 # =============================================================================
-# 🚨 BURAYI DOLDURMAN ÇOK ÖNEMLİ 🚨
-# Google Sheet tablonun tarayıcıdaki linkini tırnak içine yapıştır:
+# 🚨 SABİT AYARLAR VE LİNKLER
 # =============================================================================
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit?usp=drive_link"
-# (Yukarıdaki linki sil, kendi tablonun linkini yapıştır)
+# Senin verdiğin tablo linki buraya gömüldü:
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
 # =============================================================================
 # 0. GÖRSEL AYARLAR VE CSS
@@ -47,7 +46,7 @@ OYUN_KURALLARI = {
 OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 # =============================================================================
-# 1. GOOGLE SHEETS BAĞLANTISI (LINK İLE BAĞLANMA - GARANTİ YÖNTEM)
+# 1. GOOGLE SHEETS BAĞLANTISI (GARANTİ YÖNTEM)
 # =============================================================================
 
 @st.cache_resource
@@ -64,7 +63,6 @@ def get_google_sheet_client():
 def get_sheet_by_url():
     """Link ile doğru dosyayı bulur"""
     client = get_google_sheet_client()
-    # İsim yerine direkt URL ile açıyoruz, hata şansı 0
     return client.open_by_url(SHEET_URL)
 
 def get_users_from_sheet():
@@ -73,18 +71,16 @@ def get_users_from_sheet():
         data = sheet.get_all_records()
         return pd.DataFrame(data)
     except Exception as e:
-        return pd.DataFrame() # Hata olursa boş dön
+        return pd.DataFrame()
 
 def update_user_in_sheet(username, password, role):
     try:
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Users")
         
-        # Sayfa boşsa başlık at
         if not sheet.get_all_values():
             sheet.append_row(["Username", "Password", "Role"])
 
-        # Kullanıcıyı bul
         try:
             cell = sheet.find(username)
             if cell:
@@ -202,8 +198,8 @@ def login_screen():
                 users_df = get_users_from_sheet()
                 
                 if users_df.empty:
-                     st.error("⚠️ HATA: Robot dosyaya bağlandı ama 'Users' sayfası boş veya okunamadı.")
-                     st.info("Lütfen kodun en üstüne doğru Linki yapıştırdığından ve Drive dosyasını 'king-bot' ile paylaştığından emin ol.")
+                     st.error("⚠️ HATA: 'Users' tablosuna ulaşılamadı.")
+                     st.info("Tablonun 'Users' sayfasında Username, Password, Role başlıkları olduğundan emin ol.")
                      return
 
                 if 'Username' in users_df.columns:
@@ -230,17 +226,21 @@ def logout():
     st.rerun()
 
 # =============================================================================
-# 4. OYUN YÖNETİM ARAYÜZÜ (OYUN EKLE)
+# 4. OYUN YÖNETİM ARAYÜZÜ (OYUN EKLE - DÜZELTİLDİ)
 # =============================================================================
 
 def game_interface():
     st.markdown("<h2>🎮 Oyun Ekle</h2>", unsafe_allow_html=True)
     
+    # Oyunun aktif olup olmadığını kontrol eden bayrak
+    if "game_active" not in st.session_state: 
+        st.session_state["game_active"] = False
+
     if "temp_df" not in st.session_state:
         st.session_state["temp_df"] = pd.DataFrame()
 
-    # --- MASA KURMA ---
-    if st.session_state["temp_df"].empty:
+    # --- MASA KURMA (Eğer oyun aktif DEĞİLSE) ---
+    if not st.session_state["game_active"]:
         st.info("Şu an aktif bir oyun yok. Yeni masa kurun.")
         
         users_df = get_users_from_sheet()
@@ -262,6 +262,7 @@ def game_interface():
                 st.session_state["current_match_name"] = match_name_input
                 st.session_state["game_index"] = 0 
                 st.session_state["players"] = secilenler
+                st.session_state["game_active"] = True # ARTIK OYUN BAŞLADI SAYILACAK
                 st.rerun()
         elif len(secilenler) < 4:
             st.warning(f"⚠️ {4 - len(secilenler)} kişi daha seçmelisin.")
@@ -269,12 +270,12 @@ def game_interface():
             st.error("⛔ En fazla 4 kişi seçebilirsin!")
         return 
 
-    # --- OYUN OYNAMA ---
+    # --- OYUN OYNAMA (Eğer oyun AKTİFSE) ---
     else:
         df = st.session_state["temp_df"]
         secili_oyuncular = st.session_state["players"]
         
-        st.success(f"Dosya: **{st.session_state['current_match_name']}**")
+        st.success(f"Maç: **{st.session_state['current_match_name']}**")
         st.dataframe(df.style.format("{:.0f}"), use_container_width=True)
         
         total_limit = sum([k['limit'] for k in OYUN_KURALLARI.values()])
@@ -309,8 +310,10 @@ def game_interface():
                         sheet.append_row(["----------------------------------------"] * 5)
                         
                         st.balloons()
-                        st.success("✅ Maç başarıyla görsel tablo olarak kaydedildi!")
+                        st.success("✅ Maç başarıyla kaydedildi!")
                         
+                        # Oyunu bitir ve başa dön
+                        st.session_state["game_active"] = False
                         st.session_state["temp_df"] = pd.DataFrame()
                         del st.session_state["players"]
                         st.rerun()
