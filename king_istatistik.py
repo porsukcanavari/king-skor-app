@@ -377,7 +377,6 @@ def game_interface():
             king_maker = st.selectbox("King'i kim yaptı?", secili_oyuncular)
             
             if st.button("Onayla ve Bitir"):
-                # King Mantığı: Herkese 0 puan yaz
                 king_scores = {p: 0 for p in secili_oyuncular}
                 row_name = f"👑 KING ({king_maker})"
                 new_row = pd.DataFrame([king_scores], index=[row_name])
@@ -557,36 +556,36 @@ def profile_interface():
         c3.metric("Başarı %", f"%{win_rate:.1f}")
 
 # =============================================================================
-# 8. YÖNETİM PANELİ
+# 8. YÖNETİM PANELİ (REVİZE EDİLDİ: BUTONLA SİLME VE DOĞRULAMA)
 # =============================================================================
 
 def admin_panel():
     st.markdown("<h2>🛠️ Yönetim Paneli</h2>", unsafe_allow_html=True)
     users_df = get_users_from_sheet()
     current_user_role = st.session_state["role"]
-    with st.form("user_mgmt"):
-        st.subheader("Kullanıcı İşlemleri")
+    
+    # KULLANICI EKLEME / GÜNCELLEME (Silme buradan kaldırıldı)
+    with st.form("user_add_update"):
+        st.subheader("Kullanıcı Ekle / Güncelle")
         c1, c2, c3 = st.columns(3)
         u_name = c1.text_input("Kullanıcı Adı")
         u_pass = c2.text_input("Şifre")
         if current_user_role == "patron":
             u_role = c3.selectbox("Yetki", ["user", "admin", "patron"])
-            is_delete = st.checkbox("Bu Kullanıcıyı Sil?")
         else:
             u_role = c3.selectbox("Yetki", ["user"], disabled=True)
-            is_delete = False
-        if st.form_submit_button("İşlemi Uygula"):
+        
+        if st.form_submit_button("Kaydet"):
             if u_name:
-                if current_user_role != "patron" and is_delete:
-                    st.error("Silme yetkiniz yok.")
-                else:
-                    pwd = u_pass if u_pass else "1234"
-                    res = update_user_in_sheet(u_name, u_name, pwd, u_role, delete=is_delete)
-                    if res == "deleted": st.success(f"{u_name} silindi.")
-                    elif res == "added": st.success(f"{u_name} eklendi.")
-                    elif res == "updated": st.success(f"{u_name} güncellendi.")
+                pwd = u_pass if u_pass else "1234"
+                res = update_user_in_sheet(u_name, u_name, pwd, u_role, delete=False)
+                if res == "added": st.success(f"{u_name} eklendi.")
+                elif res == "updated": st.success(f"{u_name} güncellendi.")
+                st.rerun()
 
     st.divider()
+    
+    # PATRON ÖZEL: OYUNCU RÖNTGENİ
     if current_user_role == "patron":
         st.subheader("🕵️ Oyuncu Röntgeni")
         user_list = users_df['Username'].tolist() if not users_df.empty and 'Username' in users_df.columns else []
@@ -603,9 +602,41 @@ def admin_panel():
             else:
                 st.warning("Veri yok.")
     
+    st.divider()
+
+    # KULLANICI LİSTESİ VE SİLME BUTONLARI
     st.subheader("📋 Kullanıcı Listesi")
+    
+    # Silme Onay Kutusu (En üstte görünür)
+    if "pending_delete_user" in st.session_state and st.session_state["pending_delete_user"]:
+        target = st.session_state["pending_delete_user"]
+        st.error(f"⚠️ **{target}** kullanıcısını silmek üzeresiniz. Bu işlem geri alınamaz!")
+        col_conf1, col_conf2 = st.columns(2)
+        if col_conf1.button("✅ Evet, Sil"):
+            res = update_user_in_sheet(target, target, "xxxx", "user", delete=True)
+            if res == "deleted":
+                st.success(f"{target} başarıyla silindi.")
+                del st.session_state["pending_delete_user"]
+                st.rerun()
+        if col_conf2.button("❌ İptal"):
+            del st.session_state["pending_delete_user"]
+            st.rerun()
+    
+    # Listeyi Yazdır
     if not users_df.empty and 'Username' in users_df.columns:
-        st.dataframe(users_df[['Username', 'Role']], use_container_width=True)
+        for index, row in users_df.iterrows():
+            col_info, col_action = st.columns([4, 1])
+            with col_info:
+                st.write(f"**{row['Username']}** *(Yetki: {row['Role']})*")
+            
+            # Sadece Patron silme butonunu görür
+            if current_user_role == "patron":
+                with col_action:
+                    # Kendi kendini silemez
+                    if row['Username'] != st.session_state["username"]:
+                        if st.button("🗑️ Sil", key=f"del_btn_{row['Username']}"):
+                            st.session_state["pending_delete_user"] = row['Username']
+                            st.rerun()
 
 # =============================================================================
 # 9. ANA UYGULAMA ÇATISI
