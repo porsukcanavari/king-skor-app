@@ -1,11 +1,13 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 from datetime import datetime
+import os
+import json
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS (SENİN AYARLARIN)
+# 0. GÖRSEL AYARLAR VE CSS (SENİN AYARLARIN - DOKUNULMADI)
 # =============================================================================
 
 def inject_custom_css():
@@ -25,54 +27,6 @@ def inject_custom_css():
     </style>
     """, unsafe_allow_html=True)
 
-# =============================================================================
-# 1. GOOGLE SHEETS BAĞLANTISI (YENİ BEYİN)
-# =============================================================================
-
-@st.cache_resource
-def get_google_sheet_client():
-    # Streamlit Secrets'tan anahtarı alıyoruz
-    creds_dict = st.secrets["gcp_service_account"]
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
-    return client
-
-def get_data_from_sheet(sheet_name):
-    """Google Sheet'ten veriyi çeker"""
-    try:
-        client = get_google_sheet_client()
-        sheet = client.open("King_Veritabani").worksheet(sheet_name)
-        data = sheet.get_all_records()
-        return pd.DataFrame(data)
-    except Exception as e:
-        return pd.DataFrame()
-
-def update_user_in_sheet(username, password, role):
-    """Kullanıcı güncelleme"""
-    try:
-        client = get_google_sheet_client()
-        sheet = client.open("King_Veritabani").worksheet("Users")
-        
-        # Kullanıcıları çek
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        
-        # Varsa güncelle
-        if not df.empty and 'Username' in df.columns:
-            cell = sheet.find(username)
-            if cell:
-                sheet.update_cell(cell.row, 2, password)
-                sheet.update_cell(cell.row, 3, role)
-                return True
-        
-        # Yoksa ekle
-        sheet.append_row([username, password, role])
-        return True
-    except Exception as e:
-        st.error(f"Hata: {e}")
-        return False
-
 # King Oyun Kuralları
 OYUN_KURALLARI = {
     "Rıfkı":        {"puan": -320, "adet": 1,  "limit": 2}, 
@@ -86,71 +40,146 @@ OYUN_KURALLARI = {
 OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (GOOGLE SHEETS UYUMLU)
+# 1. GOOGLE SHEETS BAĞLANTISI (MODERN & GÜVENLİ)
+# =============================================================================
+
+@st.cache_resource
+def get_google_sheet_client():
+    # Hata veren eski yöntem yerine MODERN yöntem
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds_dict = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(creds)
+    return client
+
+def get_users_from_sheet():
+    """Kullanıcıları güvenli şekilde çeker"""
+    try:
+        client = get_google_sheet_client()
+        sheet = client.open("King_Veritabani").worksheet("Users")
+        data = sheet.get_all_records()
+        return pd.DataFrame(data)
+    except Exception as e:
+        # Eğer sayfa boşsa veya hata varsa boş dön
+        return pd.DataFrame()
+
+def init_users_sheet():
+    """Users sayfası boşsa başlıkları ekler"""
+    try:
+        client = get_google_sheet_client()
+        sheet = client.open("King_Veritabani").worksheet("Users")
+        if not sheet.get_all_values():
+            sheet.append_row(["Username", "Password", "Role"])
+            sheet.append_row(["aaykutb", "1234", "patron"])
+    except:
+        pass
+
+def update_user_in_sheet(username, password, role):
+    try:
+        client = get_google_sheet_client()
+        sheet = client.open("King_Veritabani").worksheet("Users")
+        
+        # Sayfa boşsa başlık at
+        if not sheet.get_all_values():
+            sheet.append_row(["Username", "Password", "Role"])
+
+        # Kullanıcıyı bul
+        cell = sheet.find(username)
+        if cell:
+            sheet.update_cell(cell.row, 2, password)
+            sheet.update_cell(cell.row, 3, role)
+        else:
+            sheet.append_row([username, password, role])
+        return True
+    except Exception as e:
+        st.error(f"Kayıt Hatası: {e}")
+        return False
+
+# =============================================================================
+# 2. İSTATİSTİK MOTORU (GÖRSEL TABLOYU OKUYAN YAPI)
 # =============================================================================
 
 def istatistikleri_hesapla():
-    # Artık dosyadan değil, Google Sheet'ten çekiyoruz
-    df = get_data_from_sheet("Maclar")
-    if df.empty: return None
+    try:
+        client = get_google_sheet_client()
+        sheet = client.open("King_Veritabani").worksheet("Maclar")
+        raw_data = sheet.get_all_values()
+    except:
+        return None
 
-    # Sayısal çevirme
-    numeric_cols = [col for col in df.columns if col not in ['Tarih', 'Mac_Ismi', 'Oyun_Turu']]
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    if not raw_data: return None
 
-    player_stats = {} 
-    ceza_turu_listesi = [k for k, v in OYUN_KURALLARI.items() if v['puan'] < 0]
+    player_stats = {}
+    current_players = []
     
-    # Tüm oyuncuları bul (Kolonlardan)
-    players = numeric_cols
-
-    # İlk döngü: Oyuncu profillerini oluştur
-    for p in players:
-        player_stats[p] = {
-            "mac_sayisi": 0, "toplam_puan": 0, "pozitif_mac_sayisi": 0,
-            "cezalar": {ceza: 0 for ceza in ceza_turu_listesi}, "partnerler": {}
-        }
-
-    # Maç bazlı gruplama
-    if 'Mac_Ismi' in df.columns:
-        maclar = df.groupby('Mac_Ismi')
+    # Satır satır analiz
+    for row in raw_data:
+        if not row: continue
+        first_cell = str(row[0])
         
-        for mac_adi, mac_df in maclar:
-            mac_toplamlari = mac_df[players].sum()
+        # 1. Yeni Maç Başlangıcı
+        if first_cell.startswith("--- MAÇ:"):
+            current_players = []
+            continue
             
-            for p in players:
-                # O maçta bu oyuncu var mı?
-                if p in mac_df.columns:
-                    stats = player_stats[p]
+        # 2. Oyuncu İsimleri (Başlık Satırı)
+        if first_cell == "OYUN TÜRÜ":
+            # [OYUN TÜRÜ, Aykut, Tuna, ...]
+            for col_idx in range(1, len(row)):
+                p_name = row[col_idx].strip()
+                if p_name:
+                    current_players.append(p_name)
+                    if p_name not in player_stats:
+                        player_stats[p_name] = {
+                            "mac_sayisi": 0, "toplam_puan": 0, "pozitif_mac_sayisi": 0,
+                            "cezalar": {}, "partnerler": {}, "gecici_mac_puani": 0
+                        }
+            continue
+
+        # 3. Skor Verisi
+        base_name = first_cell.split(" #")[0]
+        if base_name in OYUN_KURALLARI and current_players:
+            for i, p_name in enumerate(current_players):
+                try:
+                    score = int(row[i+1])
+                    if p_name in player_stats:
+                        stats = player_stats[p_name]
+                        stats["toplam_puan"] += score
+                        stats["gecici_mac_puani"] += score
+                        
+                        if score < 0:
+                            if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
+                            birim = OYUN_KURALLARI[base_name]['puan']
+                            stats["cezalar"][base_name] += int(score/birim)
+                except: continue
+
+        # 4. Maç Sonu
+        if first_cell == "TOPLAM":
+            for p_name in current_players:
+                if p_name in player_stats:
+                    stats = player_stats[p_name]
                     stats["mac_sayisi"] += 1
-                    puan = mac_toplamlari[p]
-                    stats["toplam_puan"] += puan
-                    if puan > 0: stats["pozitif_mac_sayisi"] += 1
+                    if stats["gecici_mac_puani"] > 0:
+                        stats["pozitif_mac_sayisi"] += 1
+                    
+                    # Partner (Komandit) Analizi
+                    others = [op for op in current_players if op != p_name]
+                    for op in others:
+                        if op not in stats["partnerler"]:
+                            stats["partnerler"][op] = {"birlikte_mac": 0, "beraber_kazanma": 0, "beraber_kaybetme": 0, "puan_toplami": 0}
+                        
+                        p_stat = stats["partnerler"][op]
+                        p_stat["birlikte_mac"] += 1
+                        p_stat["puan_toplami"] += stats["gecici_mac_puani"] # Maç sonu puanı
+                        if stats["gecici_mac_puani"] > 0: p_stat["beraber_kazanma"] += 1
+                        elif stats["gecici_mac_puani"] < 0: p_stat["beraber_kaybetme"] += 1
 
-                    # Ceza Analizi
-                    for _, row in mac_df.iterrows():
-                        oyun_turu = row['Oyun_Turu']
-                        base_name = oyun_turu.split(" #")[0]
-                        if base_name in stats["cezalar"]:
-                            satir_puani = row[p]
-                            if satir_puani < 0:
-                                birim = OYUN_KURALLARI[base_name]['puan']
-                                adet = int(satir_puani / birim)
-                                stats["cezalar"][base_name] += adet
-
-                    # Komandit (Partner) Analizi
-                    other_players = [op for op in players if op != p]
-                    for op in other_players:
-                        if op in mac_df.columns:
-                            if op not in stats["partnerler"]:
-                                stats["partnerler"][op] = {"birlikte_mac": 0, "beraber_kazanma": 0, "beraber_kaybetme": 0, "puan_toplami": 0}
-                            
-                            p_stat = stats["partnerler"][op]
-                            p_stat["birlikte_mac"] += 1
-                            p_stat["puan_toplami"] += puan
-                            if puan > 0: p_stat["beraber_kazanma"] += 1
-                            elif puan < 0: p_stat["beraber_kaybetme"] += 1
+            # Sıfırla
+            for p in player_stats: player_stats[p]["gecici_mac_puani"] = 0
+            current_players = []
 
     return player_stats
 
@@ -169,18 +198,12 @@ def login_screen():
             password = st.text_input("Şifre", type="password")
             
             if st.form_submit_button("Sisteme Gir"):
-                # Google Sheet'ten kullanıcıları çek
-                users_df = get_data_from_sheet("Users")
+                # İlk açılışta boşsa doldur
+                init_users_sheet()
                 
-                # İlk kurulum (Eğer Sheet boşsa)
-                if users_df.empty:
-                    update_user_in_sheet("aaykutb", "1234", "patron")
-                    st.info("İlk kurulum yapıldı. aaykutb / 1234 ile girin.")
-                    return
-
-                # Giriş Kontrolü
-                # Username kolonu olup olmadığını kontrol et
-                if 'Username' in users_df.columns:
+                users_df = get_users_from_sheet()
+                
+                if not users_df.empty and 'Username' in users_df.columns:
                     user_row = users_df[users_df['Username'] == username]
                     if not user_row.empty and str(user_row.iloc[0]['Password']) == str(password):
                         st.session_state["logged_in"] = True
@@ -191,7 +214,7 @@ def login_screen():
                     else:
                         st.error("Hatalı kullanıcı adı veya şifre!")
                 else:
-                    st.error("Users tablosu hatalı (Username kolonu yok).")
+                    st.error("Sistem hatası: Kullanıcı tablosuna erişilemedi.")
 
 def logout():
     st.session_state.clear()
@@ -204,16 +227,14 @@ def logout():
 def game_interface():
     st.markdown("<h2>🎮 Oyun Ekle</h2>", unsafe_allow_html=True)
     
-    # Geçici hafıza (Oyun bitene kadar burada tutuyoruz)
     if "temp_df" not in st.session_state:
         st.session_state["temp_df"] = pd.DataFrame()
 
     # --- MASA KURMA ---
     if st.session_state["temp_df"].empty:
-        st.info("Yeni masa kurun.")
+        st.info("Şu an aktif bir oyun yok. Yeni masa kurun.")
         
-        # Kullanıcıları Sheet'ten al
-        users_df = get_data_from_sheet("Users")
+        users_df = get_users_from_sheet()
         tum_oyuncular = users_df['Username'].tolist() if not users_df.empty and 'Username' in users_df.columns else []
         
         st.markdown("### 1. Maç Ayarları")
@@ -228,11 +249,10 @@ def game_interface():
         
         if len(secilenler) == 4:
             if st.button("Masayı Kur ve Başlat", type="primary"):
-                # Boş DataFrame
                 st.session_state["temp_df"] = pd.DataFrame(columns=secilenler)
                 st.session_state["current_match_name"] = match_name_input
                 st.session_state["game_index"] = 0 
-                st.session_state["players"] = secilenler # Oyuncuları sakla
+                st.session_state["players"] = secilenler
                 st.rerun()
         elif len(secilenler) < 4:
             st.warning(f"⚠️ {4 - len(secilenler)} kişi daha seçmelisin.")
@@ -245,13 +265,13 @@ def game_interface():
         df = st.session_state["temp_df"]
         secili_oyuncular = st.session_state["players"]
         
-        st.success(f"Maç: **{st.session_state['current_match_name']}**")
+        st.success(f"Dosya: **{st.session_state['current_match_name']}**")
         st.dataframe(df.style.format("{:.0f}"), use_container_width=True)
         
         total_limit = sum([k['limit'] for k in OYUN_KURALLARI.values()])
         oynanan_satir_sayisi = len(df)
         
-        # OYUN BİTİŞİ
+        # OYUN BİTİŞİ VE KAYDETME
         if oynanan_satir_sayisi >= total_limit:
             st.success("🏁 OYUN BİTTİ! Geçmiş olsun.")
             cols = st.columns(4)
@@ -259,54 +279,47 @@ def game_interface():
             for i, p in enumerate(secili_oyuncular):
                 cols[i].metric(p, f"{totals[p]}", delta_color="normal" if totals[p]>0 else "inverse")
                 
-            if st.button("💾 Maçı Google Drive'a Kaydet"):
-                with st.spinner("Google Sheets'e yazılıyor..."):
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    match_name = st.session_state["current_match_name"]
-                    
-                    # Google Sheet Client
-                    client = get_google_sheet_client()
-                    sheet = client.open("King_Veritabani").worksheet("Maclar")
-                    
-                    # Mevcut başlıkları çek
-                    headers = sheet.row_values(1)
-                    if not headers:
-                        # Boşsa başlık oluştur
-                        headers = ["Tarih", "Mac_Ismi", "Oyun_Turu"] + secili_oyuncular
-                        sheet.append_row(headers)
-                    else:
-                        # Eksik oyuncu varsa başlığa ekle
-                        for p in secili_oyuncular:
-                            if p not in headers:
-                                headers.append(p)
-                                sheet.update_cell(1, len(headers), p)
-                    
-                    # Satırları Ekle
-                    for index, row in df.iterrows():
-                        # Satır taslağı
-                        final_row = [""] * len(headers)
-                        final_row[0] = timestamp
-                        final_row[1] = match_name
-                        final_row[2] = index # Oyun Türü
+            if st.button("💾 Maçı Arşivle (Drive'a Yaz)"):
+                with st.spinner("Tablo işleniyor..."):
+                    try:
+                        client = get_google_sheet_client()
+                        sheet = client.open("King_Veritabani").worksheet("Maclar")
                         
-                        # Puanları doğru kolona yerleştir
-                        for p in secili_oyuncular:
-                            if p in headers:
-                                col_idx = headers.index(p)
-                                final_row[col_idx] = int(row[p])
+                        # GÖRSEL BLOK OLUŞTURMA
+                        tarih = datetime.now().strftime("%d.%m.%Y %H:%M")
                         
-                        sheet.append_row(final_row)
+                        # 1. Boşluk
+                        sheet.append_row([""] * 5)
+                        # 2. Maç Başlığı
+                        header_title = f"--- MAÇ: {st.session_state['current_match_name']} ({tarih}) ---"
+                        sheet.append_row([header_title, "", "", "", ""])
+                        # 3. Kolon Başlıkları
+                        sheet.append_row(["OYUN TÜRÜ"] + secili_oyuncular)
                         
-                st.balloons()
-                st.success("✅ Maç başarıyla kaydedildi!")
-                # Masayı temizle
-                st.session_state["temp_df"] = pd.DataFrame()
-                del st.session_state["players"]
-                st.rerun()
+                        # 4. Veriler
+                        for idx, row in df.iterrows():
+                            # [Rıfkı, -320, 0, 0, 0] formatında
+                            row_data = [idx] + [int(row[p]) for p in secili_oyuncular]
+                            sheet.append_row(row_data)
+                            
+                        # 5. Toplam
+                        total_row = ["TOPLAM"] + [int(totals[p]) for p in secili_oyuncular]
+                        sheet.append_row(total_row)
+                        # 6. Çizgi
+                        sheet.append_row(["----------------------------------------"] * 5)
+                        
+                        st.balloons()
+                        st.success("✅ Maç başarıyla görsel tablo olarak kaydedildi!")
+                        
+                        # Temizle
+                        st.session_state["temp_df"] = pd.DataFrame()
+                        del st.session_state["players"]
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Google Drive Hatası: {e}")
             return
 
-        # VERİ GİRİŞİ
-        if "game_index" not in st.session_state: st.session_state["game_index"] = 0
+        # VERİ GİRİŞİ (SENİN KODUN)
         mevcut_oyun_index = st.session_state["game_index"]
         if mevcut_oyun_index >= len(OYUN_SIRALAMASI): mevcut_oyun_index = len(OYUN_SIRALAMASI) - 1
 
@@ -330,10 +343,10 @@ def game_interface():
                 if total_input != rules['adet']:
                     st.error(f"Hata: Toplam {rules['adet']} olmalı, sen {total_input} girdin.")
                 else:
+                    # Rıfkı #1 formatı
                     row_name = f"{secilen_oyun} #{current_count + 1}"
                     row_data = {p: inputs[p] * rules['puan'] for p in secili_oyuncular}
                     
-                    # Geçici tabloya ekle
                     new_row = pd.DataFrame([row_data], index=[row_name])
                     st.session_state["temp_df"] = pd.concat([st.session_state["temp_df"], new_row])
                     
@@ -400,14 +413,12 @@ def profile_interface():
         
     my_stats = data[my_name]
     
-    # KARTLAR
     c1, c2, c3 = st.columns(3)
     c1.metric("Toplam Maç", my_stats['mac_sayisi'])
     c2.metric("Toplam Puan", my_stats['toplam_puan'])
     win_rate = (my_stats['pozitif_mac_sayisi'] / my_stats['mac_sayisi']) * 100 if my_stats['mac_sayisi'] > 0 else 0
     c3.metric("Kazanma %", f"%{win_rate:.1f}")
 
-    # --- KOMANDİT ANALİZİ ---
     st.divider()
     st.subheader("🤝 Komanditlik Durumu (Kim Sana Yarıyor?)")
     
@@ -431,6 +442,7 @@ def profile_interface():
         if not df_p.empty:
             best = df_p.iloc[0]
             worst = df_p.iloc[-1]
+            
             col_b, col_w = st.columns(2)
             if best['Kazanma %'] >= 50:
                 col_b.success(f"🍀 En Uğurlu: **{best['Komandit']}**\n(Beraberken kazanma oranı: %{best['Kazanma %']:.1f})")
@@ -448,10 +460,9 @@ def profile_interface():
 
 def admin_panel():
     st.markdown("<h2>🛠️ Yönetim Paneli</h2>", unsafe_allow_html=True)
-    users_df = get_data_from_sheet("Users")
+    users_df = get_users_from_sheet()
     current_user_role = st.session_state["role"]
     
-    # KULLANICI EKLEME
     with st.form("add_user_form"):
         st.subheader("Yeni Kullanıcı Ekle")
         c1, c2, c3 = st.columns(3)
@@ -464,20 +475,17 @@ def admin_panel():
         
         if st.form_submit_button("Kaydet"):
             if u_name and u_pass:
-                # Yetki kontrolü (Sheet'ten okuyarak)
                 if not users_df.empty and u_name in users_df['Username'].values and current_user_role != "patron":
                     st.error("Yetkisiz işlem.")
                 else:
                     if update_user_in_sheet(u_name, u_pass, u_role):
-                        st.success(f"✅ {u_name} Drive'a kaydedildi.")
+                        st.success(f"✅ {u_name} eklendi.")
 
     st.divider()
     
-    # --- PATRON ÖZEL ---
     if current_user_role == "patron":
         st.subheader("🕵️ Patron Özel: Oyuncu Röntgeni")
-        # Sheet'teki kullanıcı listesi
-        user_list = users_df['Username'].tolist() if not users_df.empty else []
+        user_list = users_df['Username'].tolist() if not users_df.empty and 'Username' in users_df.columns else []
         target_user = st.selectbox("İncelenecek Oyuncu:", user_list)
         
         if target_user:
@@ -508,11 +516,11 @@ def admin_panel():
                 st.warning("Bu oyuncunun henüz maç kaydı yok.")
     else:
         st.subheader("📋 Kullanıcı Listesi")
-        if not users_df.empty:
+        if not users_df.empty and 'Username' in users_df.columns:
             st.dataframe(users_df[['Username', 'Role']])
 
 # =============================================================================
-# 9. ANA UYGULAMA ÇATISI (MAIN)
+# 9. ANA UYGULAMA ÇATISI
 # =============================================================================
 
 st.set_page_config(page_title="King İstatistik Kurumu", layout="wide", page_icon="👑")
