@@ -207,32 +207,33 @@ def login_screen():
             password = st.text_input("Şifre", type="password")
             
             if st.form_submit_button("Sisteme Gir"):
-                # İlk açılışta boşsa doldur
-                init_users_sheet()
-                
-                users_df = get_users_from_sheet()
-                
-                if not users_df.empty and 'Username' in users_df.columns:
-                    # Kullanıcı kontrolü
-                    # Büyük küçük harf duyarlılığını kaldırmak için string çevrimi yapıyoruz
-                    user_match = users_df[users_df['Username'].astype(str) == username]
+                try:
+                    # HATA AYIKLAMA MODU AÇIK
+                    init_users_sheet()
+                    users_df = get_users_from_sheet()
                     
-                    if not user_match.empty:
-                        # Şifreyi string olarak karşılaştır (Excel sayı yapabilir)
-                        stored_pass = str(user_match.iloc[0]['Password'])
-                        if stored_pass == str(password):
-                            st.session_state["logged_in"] = True
-                            st.session_state["username"] = username
-                            st.session_state["role"] = user_match.iloc[0]['Role']
-                            st.success("Giriş Başarılı!")
-                            st.rerun()
+                    if not users_df.empty and 'Username' in users_df.columns:
+                        user_match = users_df[users_df['Username'].astype(str) == username]
+                        if not user_match.empty:
+                            stored_pass = str(user_match.iloc[0]['Password'])
+                            if stored_pass == str(password):
+                                st.session_state["logged_in"] = True
+                                st.session_state["username"] = username
+                                st.session_state["role"] = user_match.iloc[0]['Role']
+                                st.success("Giriş Başarılı!")
+                                st.rerun()
+                            else:
+                                st.error("Hatalı şifre!")
                         else:
-                            st.error("Hatalı şifre!")
+                            st.error("Kullanıcı bulunamadı!")
                     else:
-                        st.error("Kullanıcı bulunamadı!")
-                else:
-                    st.error("Sistem hatası: Kullanıcı tablosuna erişilemedi veya tablo boş. Lütfen Drive'da 'Users' sayfasının dolu olduğundan ve 'king-bot' mailine yetki verildiğinden emin olun.")
-
+                        st.error("Tablo boş veya kolonlar hatalı.")
+                
+                except Exception as e:
+                    # İŞTE BURASI BİZE GERÇEK HATAYI SÖYLEYECEK
+                    st.error(f"🚨 TEKNİK HATA DETAYI: {e}")
+                    st.write("Lütfen bu hatayı Aykut'a (Yapay Zeka'ya) kopyala.")
+                    
 def logout():
     st.session_state.clear()
     st.rerun()
@@ -561,3 +562,4 @@ else:
         st.markdown("---")
         if st.button("Çıkış Yap"):
             logout()
+
