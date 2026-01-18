@@ -218,7 +218,7 @@ def istatistikleri_hesapla():
 
 def login_screen():
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown("<h1>🔒 King Pro Giriş</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>King İstatistik Kurumu Giriş</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -260,7 +260,7 @@ def game_interface():
         
         st.markdown("### 2. Kadro Seçimi")
         secilenler = st.multiselect(
-            "Oyuncu Havuzu (Tam 4 Kişi)", 
+            "4 oyuncu seçiniz:", 
             options=tum_oyuncular,
             default=tum_oyuncular[:4] if len(tum_oyuncular) >= 4 else None
         )
@@ -300,7 +300,7 @@ def game_interface():
             for i, p in enumerate(secili_oyuncular):
                 cols[i].metric(p, f"{totals[p]}", delta_color="normal" if totals[p]>0 else "inverse")
                 
-            if st.button("💾 Maçı Düzenle ve Arşivle"):
+            if st.button("💾 Maçı Arşivle"):
                 final_name = st.session_state["current_match_name"]
                 # Sorter Logic
                 df_sorted = df.copy()
@@ -425,7 +425,7 @@ def profile_interface():
 
     # --- PARTNER ANALİZİ (YENİ ÖZELLİK) ---
     st.divider()
-    st.subheader("🤝 Partner Uyumu (Kim Uğurlu?)")
+    st.subheader("🤝 Komanditlik Durumu (Kim Uğurlu?)")
     
     partners = my_stats['partnerler']
     if partners:
@@ -439,7 +439,7 @@ def profile_interface():
             p_win_rate = (wins / total * 100) if total > 0 else 0
             
             p_list.append({
-                "Partner": p_name,
+                "Komandit": p_name,
                 "Maç": total,
                 "Kazanma %": p_win_rate,
                 "Net Skor": p_dat['puan_toplami']
@@ -463,7 +463,7 @@ def profile_interface():
         
         st.dataframe(df_p.style.format({"Kazanma %": "{:.1f}%"}), use_container_width=True)
     else:
-        st.info("Henüz yeterli partner verisi yok.")
+        st.info("Henüz yeterli komanditlik verisi yok.")
 
 # =============================================================================
 # 8. YÖNETİM PANELİ (PATRON ÖZEL ANALİZ EKLENDİ)
@@ -499,7 +499,7 @@ def admin_panel():
     # --- PATRON ÖZEL: OYUNCU ANALİZİ (YENİ) ---
     if current_user_role == "patron":
         st.subheader("🕵️ Patron Özel: Oyuncu Röntgeni")
-        st.info("İstediğin oyuncuyu seçip profilini ve partner analizlerini görebilirsin.")
+        st.info("İstediğin oyuncuyu seçip profilini ve komandit analizlerini görebilirsin.")
         
         target_user = st.selectbox("İncelenecek Oyuncu:", list(users.keys()))
         
@@ -515,7 +515,7 @@ def admin_panel():
                 t_wr = (t_stats['pozitif_mac_sayisi'] / t_stats['mac_sayisi']) * 100 if t_stats['mac_sayisi'] > 0 else 0
                 c3.metric("Kazanma %", f"%{t_wr:.1f}")
                 
-                st.write(f"**{target_user} için Partner Analizi:**")
+                st.write(f"**{target_user} için Komandit Analizi:**")
                 t_partners = t_stats['partnerler']
                 if t_partners:
                     tp_list = []
@@ -523,12 +523,12 @@ def admin_panel():
                         total = p_dat['birlikte_mac']
                         wins = p_dat['beraber_kazanma']
                         tp_win_rate = (wins / total * 100) if total > 0 else 0
-                        tp_list.append({"Partner": p_name, "Maç": total, "Kazanma %": tp_win_rate, "Net Skor": p_dat['puan_toplami']})
+                        tp_list.append({"Komandit": p_name, "Maç": total, "Kazanma %": tp_win_rate, "Net Skor": p_dat['puan_toplami']})
                     
                     df_tp = pd.DataFrame(tp_list).sort_values(by="Kazanma %", ascending=False)
                     st.dataframe(df_tp.style.format({"Kazanma %": "{:.1f}%"}), use_container_width=True)
                 else:
-                    st.warning("Bu oyuncunun partner verisi yok.")
+                    st.warning("Bu oyuncunun komandit verisi yok.")
             else:
                 st.warning("Bu oyuncunun henüz maç kaydı yok.")
 
@@ -563,7 +563,7 @@ else:
     with st.sidebar:
         st.markdown(f"### 👑 {st.session_state['username']}")
         st.caption(f"Yetki: {st.session_state['role'].upper()}")
-        st.caption("*(Telefondaysan sol üstten menüyü aç)*")
+
         
         menu = ["📊 İstatistikler", "👤 Profilim"]
         if st.session_state["role"] in ["admin", "patron"]:
