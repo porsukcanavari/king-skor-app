@@ -7,7 +7,7 @@ import os
 import json
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS (SENİN AYARLARIN - DOKUNULMADI)
+# 0. GÖRSEL AYARLAR VE CSS (SENİN AYARLARIN)
 # =============================================================================
 
 def inject_custom_css():
@@ -45,7 +45,6 @@ OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 @st.cache_resource
 def get_google_sheet_client():
-    # Hata veren eski yöntem yerine MODERN yöntem
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -63,7 +62,7 @@ def get_users_from_sheet():
         data = sheet.get_all_records()
         return pd.DataFrame(data)
     except Exception as e:
-        # Eğer sayfa boşsa veya hata varsa boş dön
+        # Hata detayını görmek için st.error açılabilir ama şimdilik boş dönelim
         return pd.DataFrame()
 
 def init_users_sheet():
@@ -87,12 +86,17 @@ def update_user_in_sheet(username, password, role):
             sheet.append_row(["Username", "Password", "Role"])
 
         # Kullanıcıyı bul
-        cell = sheet.find(username)
-        if cell:
-            sheet.update_cell(cell.row, 2, password)
-            sheet.update_cell(cell.row, 3, role)
-        else:
+        try:
+            cell = sheet.find(username)
+            if cell:
+                sheet.update_cell(cell.row, 2, password)
+                sheet.update_cell(cell.row, 3, role)
+            else:
+                sheet.append_row([username, password, role])
+        except:
+            # Bulamazsa ekle
             sheet.append_row([username, password, role])
+            
         return True
     except Exception as e:
         st.error(f"Kayıt Hatası: {e}")
@@ -144,16 +148,21 @@ def istatistikleri_hesapla():
         if base_name in OYUN_KURALLARI and current_players:
             for i, p_name in enumerate(current_players):
                 try:
-                    score = int(row[i+1])
-                    if p_name in player_stats:
-                        stats = player_stats[p_name]
-                        stats["toplam_puan"] += score
-                        stats["gecici_mac_puani"] += score
+                    # i+1 çünkü 0. indeks oyun adı
+                    if (i + 1) < len(row):
+                        score_str = row[i+1]
+                        if score_str == "" or score_str == " ": continue # Boşsa geç
                         
-                        if score < 0:
-                            if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
-                            birim = OYUN_KURALLARI[base_name]['puan']
-                            stats["cezalar"][base_name] += int(score/birim)
+                        score = int(score_str)
+                        if p_name in player_stats:
+                            stats = player_stats[p_name]
+                            stats["toplam_puan"] += score
+                            stats["gecici_mac_puani"] += score
+                            
+                            if score < 0:
+                                if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
+                                birim = OYUN_KURALLARI[base_name]['puan']
+                                stats["cezalar"][base_name] += int(score/birim)
                 except: continue
 
         # 4. Maç Sonu
@@ -173,7 +182,7 @@ def istatistikleri_hesapla():
                         
                         p_stat = stats["partnerler"][op]
                         p_stat["birlikte_mac"] += 1
-                        p_stat["puan_toplami"] += stats["gecici_mac_puani"] # Maç sonu puanı
+                        p_stat["puan_toplami"] += stats["gecici_mac_puani"]
                         if stats["gecici_mac_puani"] > 0: p_stat["beraber_kazanma"] += 1
                         elif stats["gecici_mac_puani"] < 0: p_stat["beraber_kaybetme"] += 1
 
@@ -204,17 +213,25 @@ def login_screen():
                 users_df = get_users_from_sheet()
                 
                 if not users_df.empty and 'Username' in users_df.columns:
-                    user_row = users_df[users_df['Username'] == username]
-                    if not user_row.empty and str(user_row.iloc[0]['Password']) == str(password):
-                        st.session_state["logged_in"] = True
-                        st.session_state["username"] = username
-                        st.session_state["role"] = user_row.iloc[0]['Role']
-                        st.success("Giriş Başarılı!")
-                        st.rerun()
+                    # Kullanıcı kontrolü
+                    # Büyük küçük harf duyarlılığını kaldırmak için string çevrimi yapıyoruz
+                    user_match = users_df[users_df['Username'].astype(str) == username]
+                    
+                    if not user_match.empty:
+                        # Şifreyi string olarak karşılaştır (Excel sayı yapabilir)
+                        stored_pass = str(user_match.iloc[0]['Password'])
+                        if stored_pass == str(password):
+                            st.session_state["logged_in"] = True
+                            st.session_state["username"] = username
+                            st.session_state["role"] = user_match.iloc[0]['Role']
+                            st.success("Giriş Başarılı!")
+                            st.rerun()
+                        else:
+                            st.error("Hatalı şifre!")
                     else:
-                        st.error("Hatalı kullanıcı adı veya şifre!")
+                        st.error("Kullanıcı bulunamadı!")
                 else:
-                    st.error("Sistem hatası: Kullanıcı tablosuna erişilemedi.")
+                    st.error("Sistem hatası: Kullanıcı tablosuna erişilemedi veya tablo boş. Lütfen Drive'da 'Users' sayfasının dolu olduğundan ve 'king-bot' mailine yetki verildiğinden emin olun.")
 
 def logout():
     st.session_state.clear()
@@ -544,8 +561,3 @@ else:
         st.markdown("---")
         if st.button("Çıkış Yap"):
             logout()
-    
-    if choice == "🎮 Oyun Ekle": game_interface()
-    elif choice == "📊 İstatistikler": stats_interface()
-    elif choice == "👤 Profilim": profile_interface()
-    elif choice == "🛠️ Yönetim Paneli": admin_panel()
