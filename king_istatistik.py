@@ -46,7 +46,7 @@ OYUN_KURALLARI = {
 OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 # =============================================================================
-# 1. GOOGLE SHEETS BAĞLANTISI (GARANTİ YÖNTEM)
+# 1. GOOGLE SHEETS BAĞLANTISI
 # =============================================================================
 
 @st.cache_resource
@@ -79,7 +79,6 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Users")
         
-        # Eğer sayfa boşsa başlık ekle
         if not sheet.get_all_values():
             sheet.append_row(["Username", "Password", "Role"])
             
@@ -90,7 +89,6 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
                     sheet.delete_rows(cell.row)
                     return "deleted"
                 else:
-                    # Güncelleme (İsim değişmiş olabilir)
                     sheet.update_cell(cell.row, 1, new_username)
                     sheet.update_cell(cell.row, 2, password)
                     sheet.update_cell(cell.row, 3, role)
@@ -109,7 +107,7 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (GÖRSEL TABLOYU OKUYAN YAPI)
+# 2. İSTATİSTİK MOTORU
 # =============================================================================
 
 def istatistikleri_hesapla():
@@ -123,27 +121,23 @@ def istatistikleri_hesapla():
     if not raw_data: return None, None
 
     player_stats = {}
-    match_history = [] # Geçmiş maç listesi
+    match_history = [] 
     
     current_players = []
-    current_match_data = {} # Anlık maç verisi
-    current_match_name = ""
+    current_match_data = {} 
     
-    # Satır satır analiz
     for row in raw_data:
         if not row: continue
         first_cell = str(row[0])
         
-        # 1. Yeni Maç Başlangıcı
+        # 1. Yeni Maç
         if first_cell.startswith("--- MAÇ:"):
-            current_match_name = first_cell
             current_players = []
             current_match_data = {"baslik": first_cell, "skorlar": [], "oyuncular": []}
             continue
             
-        # 2. Oyuncu İsimleri (Başlık Satırı)
+        # 2. Oyuncular
         if first_cell == "OYUN TÜRÜ":
-            # [OYUN TÜRÜ, Aykut, Tuna, ...]
             for col_idx in range(1, len(row)):
                 p_name = row[col_idx].strip()
                 if p_name:
@@ -153,14 +147,14 @@ def istatistikleri_hesapla():
                         player_stats[p_name] = {
                             "mac_sayisi": 0, "toplam_puan": 0, "pozitif_mac_sayisi": 0,
                             "cezalar": {}, "partnerler": {}, "gecici_mac_puani": 0,
-                            "rekor_max": -9999, "rekor_min": 9999 # Rekorlar için
+                            "rekor_max": -9999, "rekor_min": 9999 
                         }
             continue
 
         # 3. Skor Verisi
         base_name = first_cell.split(" #")[0]
-        if base_name in OYUN_KURALLARI and current_players:
-            # Maç detayına ekle (Satır verisi)
+        # King satırını veya normal oyun satırını işle
+        if (base_name in OYUN_KURALLARI or "KING" in first_cell) and current_players:
             current_match_data["skorlar"].append(row)
             
             for i, p_name in enumerate(current_players):
@@ -175,7 +169,8 @@ def istatistikleri_hesapla():
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
                             
-                            if score < 0:
+                            # Ceza Analizi (Sadece normal oyunlarda)
+                            if score < 0 and base_name in OYUN_KURALLARI:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
                                 stats["cezalar"][base_name] += int(score/birim)
@@ -183,7 +178,6 @@ def istatistikleri_hesapla():
 
         # 4. Maç Sonu
         if first_cell == "TOPLAM":
-            # Maç listesine kaydet
             current_match_data["toplamlar"] = row
             match_history.append(current_match_data)
             
@@ -193,15 +187,10 @@ def istatistikleri_hesapla():
                     stats["mac_sayisi"] += 1
                     mac_puani = stats["gecici_mac_puani"]
                     
-                    # Batma/Çıkma
-                    if mac_puani > 0:
-                        stats["pozitif_mac_sayisi"] += 1
-                    
-                    # Rekorlar (Batış / Çıkış)
+                    if mac_puani > 0: stats["pozitif_mac_sayisi"] += 1
                     if mac_puani > stats["rekor_max"]: stats["rekor_max"] = mac_puani
                     if mac_puani < stats["rekor_min"]: stats["rekor_min"] = mac_puani
                     
-                    # Partner (Komandit) Analizi
                     others = [op for op in current_players if op != p_name]
                     for op in others:
                         if op not in stats["partnerler"]:
@@ -213,7 +202,6 @@ def istatistikleri_hesapla():
                         if mac_puani > 0: p_stat["beraber_kazanma"] += 1
                         elif mac_puani < 0: p_stat["beraber_kaybetme"] += 1
 
-            # Sıfırla
             for p in player_stats: player_stats[p]["gecici_mac_puani"] = 0
             current_players = []
 
@@ -256,14 +244,14 @@ def login_screen():
                     else:
                         st.error("Kullanıcı bulunamadı!")
                 else:
-                    st.error(f"Tablo formatı hatalı! Görünen kolonlar: {users_df.columns.tolist()}")
+                    st.error(f"Tablo formatı hatalı!")
 
 def logout():
     st.session_state.clear()
     st.rerun()
 
 # =============================================================================
-# 4. OYUN YÖNETİM ARAYÜZÜ (OYUN EKLE)
+# 4. OYUN YÖNETİM ARAYÜZÜ (OYUN EKLE & DİNAMİK LİMİT & KING)
 # =============================================================================
 
 def game_interface():
@@ -271,6 +259,7 @@ def game_interface():
     
     if "game_active" not in st.session_state: st.session_state["game_active"] = False
     if "temp_df" not in st.session_state: st.session_state["temp_df"] = pd.DataFrame()
+    if "king_mode" not in st.session_state: st.session_state["king_mode"] = False
 
     # --- MASA KURMA ---
     if not st.session_state["game_active"]:
@@ -282,10 +271,8 @@ def game_interface():
         c1, c2 = st.columns(2)
         match_name_input = c1.text_input("Maç İsmi:", value="King_Maci")
         
-        # TARİH SEÇİMİ
         is_past = c2.checkbox("Geçmiş Tarihli Maç?")
         if is_past:
-            # Tarih seçici ama formatı biz ayarlayacağız
             selected_date = c2.date_input("Maç Tarihi", value=datetime.now())
             mac_tarihi_str = selected_date.strftime("%d.%m.%Y")
         else:
@@ -298,10 +285,11 @@ def game_interface():
             if st.button("Masayı Kur ve Başlat", type="primary"):
                 st.session_state["temp_df"] = pd.DataFrame(columns=secilenler)
                 st.session_state["current_match_name"] = match_name_input
-                st.session_state["match_date"] = mac_tarihi_str # Tarihi sakla
+                st.session_state["match_date"] = mac_tarihi_str 
                 st.session_state["game_index"] = 0 
                 st.session_state["players"] = secilenler
                 st.session_state["game_active"] = True
+                st.session_state["king_mode"] = False
                 st.rerun()
         elif len(secilenler) < 4:
             st.warning(f"⚠️ {4 - len(secilenler)} kişi daha seçmelisin.")
@@ -321,20 +309,20 @@ def game_interface():
         total_limit = sum([k['limit'] for k in OYUN_KURALLARI.values()])
         oynanan_satir_sayisi = len(df)
         
-        if oynanan_satir_sayisi >= total_limit:
+        # OYUN BİTİŞ KONTROLÜ
+        if oynanan_satir_sayisi >= total_limit or st.session_state["king_mode"]:
             st.success("🏁 OYUN BİTTİ!")
             cols = st.columns(4)
             totals = df.sum()
             for i, p in enumerate(secili_oyuncular):
                 cols[i].metric(p, f"{totals[p]}", delta_color="normal" if totals[p]>0 else "inverse")
                 
-            if st.button("💾 Maçı Arşivle (Drive'a Yaz)"):
+            if st.button("💾 Maçı Arşivle (Drive'a Yaz)", type="primary"):
                 with st.spinner("Tablo işleniyor..."):
                     try:
                         wb = get_sheet_by_url()
                         sheet = wb.worksheet("Maclar")
                         
-                        # GÖRSEL BLOK OLUŞTURMA
                         tarih = st.session_state["match_date"]
                         
                         sheet.append_row([""] * 5)
@@ -353,6 +341,7 @@ def game_interface():
                         st.balloons()
                         st.success("✅ Maç başarıyla kaydedildi!")
                         st.session_state["game_active"] = False
+                        st.session_state["king_mode"] = False
                         st.session_state["temp_df"] = pd.DataFrame()
                         del st.session_state["players"]
                         st.rerun()
@@ -360,48 +349,114 @@ def game_interface():
                         st.error(f"Google Drive Hatası: {e}")
             return
 
-        # Veri Girişi
+        # --- NORMAL OYUN AKIŞI ---
+        
+        # 👑 KING YAPILDI BUTONU
+        st.markdown("---")
+        if st.button("👑 KING YAPILDI (OYUNU BİTİR)", type="secondary"):
+             st.session_state["show_king_dialog"] = True
+
+        if st.session_state.get("show_king_dialog", False):
+            st.warning("Bu işlem oyunu anında bitirecek!")
+            king_maker = st.selectbox("King'i kim yaptı?", secili_oyuncular)
+            
+            if st.button("Onayla ve Bitir"):
+                # King Mantığı: Yapan +2100, Diğerleri -700
+                king_scores = {}
+                for p in secili_oyuncular:
+                    if p == king_maker:
+                        king_scores[p] = 2100
+                    else:
+                        king_scores[p] = -700
+                
+                row_name = f"👑 KING ({king_maker})"
+                new_row = pd.DataFrame([king_scores], index=[row_name])
+                st.session_state["temp_df"] = pd.concat([st.session_state["temp_df"], new_row])
+                
+                st.session_state["king_mode"] = True
+                st.session_state["show_king_dialog"] = False
+                st.rerun()
+
+        st.markdown("---")
+        
+        # VERİ GİRİŞİ (AKILLI LİMİT SİSTEMİ)
         mevcut_oyun_index = st.session_state["game_index"]
         if mevcut_oyun_index >= len(OYUN_SIRALAMASI): mevcut_oyun_index = len(OYUN_SIRALAMASI) - 1
 
         secilen_oyun = st.selectbox("Sıradaki Oyun:", OYUN_SIRALAMASI, index=mevcut_oyun_index, disabled=True)
         rules = OYUN_KURALLARI[secilen_oyun]
         current_count = len([x for x in df.index if secilen_oyun in x])
-        remaining = rules['limit'] - current_count
+        remaining_rounds = rules['limit'] - current_count
         
-        st.info(f"Oynanan: **{secilen_oyun}** | Kalan Hak: **{remaining}**")
+        st.info(f"Oynanan: **{secilen_oyun}** | Kalan Hak: **{remaining_rounds}** | Toplam Adet: **{rules['adet']}**")
         
-        with st.form("input_form"):
-            col_in = st.columns(4)
-            inputs = {}
-            total_input = 0
-            for i, p in enumerate(secili_oyuncular):
-                val = col_in[i].number_input(f"{p}", min_value=0, max_value=rules['adet'], step=1, key=f"in_{p}_{oynanan_satir_sayisi}")
-                inputs[p] = val
-                total_input += val
+        # DİNAMİK INPUT ALANI (Form Kullanmıyoruz ki anlık güncellensin)
+        cols = st.columns(4)
+        inputs = {}
+        
+        # Bu satırın benzersiz anahtarı (Her tur değişmeli)
+        row_key_base = f"{secilen_oyun}_{current_count}"
+        
+        # Mevcut toplamı hesapla (Session state'den)
+        current_sum = 0
+        for p in secili_oyuncular:
+            key = f"val_{row_key_base}_{p}"
+            current_sum += st.session_state.get(key, 0)
             
-            if st.form_submit_button("Kaydet ve İlerle"):
-                if total_input != rules['adet']:
-                    st.error(f"Hata: Toplam {rules['adet']} olmalı, sen {total_input} girdin.")
-                else:
-                    row_name = f"{secilen_oyun} #{current_count + 1}"
-                    row_data = {p: inputs[p] * rules['puan'] for p in secili_oyuncular}
-                    
-                    new_row = pd.DataFrame([row_data], index=[row_name])
-                    st.session_state["temp_df"] = pd.concat([st.session_state["temp_df"], new_row])
-                    
-                    yeni_sayac = len([x for x in st.session_state["temp_df"].index if secilen_oyun in x])
-                    if yeni_sayac >= rules['limit'] and st.session_state["game_index"] < len(OYUN_SIRALAMASI) - 1:
-                        st.session_state["game_index"] += 1
-                    st.rerun()
-    
-    st.divider()
-    if st.button("⚠️ Son Satırı Sil (Geri Al)"):
-        if not st.session_state["temp_df"].empty:
-            last = st.session_state["temp_df"].index[-1].split(" #")[0]
-            st.session_state["temp_df"] = st.session_state["temp_df"][:-1]
-            if last in OYUN_SIRALAMASI: st.session_state["game_index"] = OYUN_SIRALAMASI.index(last)
-            st.rerun()
+        remaining_total_for_row = rules['adet'] - current_sum
+        
+        # Inputları çiz
+        for i, p in enumerate(secili_oyuncular):
+            key = f"val_{row_key_base}_{p}"
+            
+            # Bu oyuncunun şu anki değeri
+            my_val = st.session_state.get(key, 0)
+            
+            # Bu oyuncu için maksimum değer = Kendi değeri + Kalan toplam hak
+            # (Yani kendi değerini değiştirebilir ama toplamı aşamaz)
+            my_max = my_val + remaining_total_for_row
+            
+            # Negatif koruması
+            if my_max < 0: my_max = 0
+            
+            val = cols[i].number_input(
+                f"{p}", 
+                min_value=0, 
+                max_value=int(my_max), # Dinamik limit burası!
+                step=1, 
+                key=key
+            )
+            inputs[p] = val
+
+        # Toplam kontrolü ve Kaydet butonu
+        final_sum = sum(inputs.values())
+        
+        col_btn1, col_btn2 = st.columns(2)
+        
+        if col_btn1.button("Kaydet ve İlerle", type="primary"):
+            if final_sum != rules['adet']:
+                st.error(f"Hata: Toplam {rules['adet']} olmalı, şu an {final_sum}.")
+            else:
+                row_name = f"{secilen_oyun} #{current_count + 1}"
+                row_data = {p: inputs[p] * rules['puan'] for p in secili_oyuncular}
+                
+                new_row = pd.DataFrame([row_data], index=[row_name])
+                st.session_state["temp_df"] = pd.concat([st.session_state["temp_df"], new_row])
+                
+                # İlerle
+                yeni_sayac = len([x for x in st.session_state["temp_df"].index if secilen_oyun in x])
+                if yeni_sayac >= rules['limit'] and st.session_state["game_index"] < len(OYUN_SIRALAMASI) - 1:
+                    st.session_state["game_index"] += 1
+                
+                # Inputları temizlemek için yeni key lazım olacak, rerun yeterli
+                st.rerun()
+
+        if col_btn2.button("⚠️ Son Satırı Sil"):
+            if not st.session_state["temp_df"].empty:
+                last = st.session_state["temp_df"].index[-1].split(" #")[0]
+                st.session_state["temp_df"] = st.session_state["temp_df"][:-1]
+                if last in OYUN_SIRALAMASI: st.session_state["game_index"] = OYUN_SIRALAMASI.index(last)
+                st.rerun()
 
 # =============================================================================
 # 6. İSTATİSTİK ARAYÜZÜ (GELİŞMİŞ)
@@ -415,102 +470,67 @@ def stats_interface():
         st.warning("Henüz tamamlanmış maç verisi yok.")
         return
 
-    # Sekmeler
     tabs = st.tabs(["🔥 Batma/Çıkma & Rekorlar", "🏆 Genel Durum", "📜 Maç Geçmişi", "🚫 Ceza Analizi", "🤝 Komanditlik"])
     df_stats = pd.DataFrame.from_dict(stats, orient='index')
 
-    # 1. SEKME: BATMA ÇIKMA ORANI (EN ÖNEMLİSİ)
     with tabs[0]:
         st.subheader("🔥 Batma / Çıkma Oranı (Win Rate)")
         if not df_stats.empty:
-            # Oran hesabı
             df_stats['win_rate'] = (df_stats['pozitif_mac_sayisi'] / df_stats['mac_sayisi']) * 100
-            
-            # Tabloyu hazırla
             win_table = df_stats[['mac_sayisi', 'pozitif_mac_sayisi', 'win_rate']].sort_values('win_rate', ascending=False)
             win_table.columns = ['Toplam Maç', 'Çıkılan Maç (Win)', 'Başarı Oranı (%)']
             st.dataframe(win_table.style.format({'Başarı Oranı (%)': "{:.1f}%"}), use_container_width=True)
             
             st.divider()
-            st.subheader("🏔️ Zirveler ve Dipler (Tek Maçlık Rekorlar)")
-            
+            st.subheader("🏔️ Zirveler ve Dipler")
             col_rec1, col_rec2 = st.columns(2)
-            # En yüksek puanı bulan
             max_puan = df_stats['rekor_max'].max()
             max_player = df_stats['rekor_max'].idxmax()
             col_rec1.success(f"🚀 **En Yüksek Çıkış:**\n# {max_player} ({max_puan})")
 
-            # En düşük puanı bulan
             min_puan = df_stats['rekor_min'].min()
             min_player = df_stats['rekor_min'].idxmin()
             col_rec2.error(f"⚓ **En Büyük Batış:**\n# {min_player} ({min_puan})")
 
-    # 2. SEKME: GENEL DURUM
     with tabs[1]:
         st.subheader("🏆 Genel Puan ve Maç Sayısı")
         if not df_stats.empty:
-            # Toplam Puan Sıralaması
             st.write("**Genel Puan Sıralaması**")
             st.dataframe(df_stats[['mac_sayisi', 'toplam_puan']].sort_values('toplam_puan', ascending=False), use_container_width=True)
-            
             st.divider()
-            # En çok maç yapan
             most_matches = df_stats['mac_sayisi'].idxmax()
             count = df_stats['mac_sayisi'].max()
-            st.info(f"🏅 **İstikrar Abidesi (En Çok Maç):** {most_matches} ({count} Maç)")
+            st.info(f"🏅 **İstikrar Abidesi:** {most_matches} ({count} Maç)")
 
-    # 3. SEKME: MAÇ GEÇMİŞİ (LİSTE)
     with tabs[2]:
         st.subheader("📜 Tüm Maçların Arşivi")
         if match_history:
-            # Maç isimleri listesi (Tersine çevir ki en yeni en üstte olsun)
             match_names = [f"{m['baslik']}" for m in match_history][::-1]
             selected_match_name = st.selectbox("İncelemek istediğin maçı seç:", match_names)
-            
-            # Seçilen maçı bul
             selected_data = next((m for m in match_history if m['baslik'] == selected_match_name), None)
             
             if selected_data:
-                # DataFrame oluşturup göster
-                # Kolonlar: Oyun Türü + Oyuncular
                 cols = ["OYUN TÜRÜ"] + selected_data["oyuncular"]
                 rows = []
-                
-                # Skor satırları
-                for s in selected_data["skorlar"]:
-                    # Sadece ilgili kolonları al (ilk kolon oyun adı, sonra oyuncular)
-                    # s listesi: [OyunAdı, Puan1, Puan2...]
-                    # Bizim cols ile uyumlu mu? Evet.
-                    rows.append(s[:len(cols)])
-                
-                # Toplam satırı
+                for s in selected_data["skorlar"]: rows.append(s[:len(cols)])
                 rows.append(selected_data["toplamlar"][:len(cols)])
-                
-                df_history = pd.DataFrame(rows, columns=cols)
-                st.dataframe(df_history, use_container_width=True)
+                st.dataframe(pd.DataFrame(rows, columns=cols), use_container_width=True)
         else:
             st.info("Henüz kayıtlı maç yok.")
 
-    # 4. SEKME: CEZA ANALİZİ
     with tabs[3]:
-        st.subheader("🚫 Kim Neyi Çok Yiyor?")
+        st.subheader("🚫 Ceza Analizi")
         ceza_list = [k for k in OYUN_KURALLARI.keys() if OYUN_KURALLARI[k]['puan'] < 0]
-        
         selected_ceza = st.selectbox("Ceza Türü Seç:", ceza_list)
-        
-        # Veriyi hazırla: Oyuncu başına o cezadan kaç tane yemiş?
-        # Daha adil olması için: (Yediği Ceza Sayısı / Oynadığı Maç Sayısı)
         ceza_data = {}
         for p in stats:
             yenen = stats[p]['cezalar'].get(selected_ceza, 0)
             mac = stats[p]['mac_sayisi']
             ortalama = yenen / mac if mac > 0 else 0
             ceza_data[p] = ortalama
-        
         st.bar_chart(pd.Series(ceza_data))
         st.caption(f"*Grafik: Maç başına ortalama yenen {selected_ceza} sayısı.*")
 
-    # 5. SEKME: KOMANDİT
     with tabs[4]:
         st.subheader("🤝 Komanditlik Durumu")
         me = st.session_state["username"]
@@ -522,9 +542,7 @@ def stats_interface():
                 wins = p_dat['beraber_kazanma']
                 p_win_rate = (wins / total * 100) if total > 0 else 0
                 p_list.append({"Komandit": p_name, "Maç": total, "Kazanma %": p_win_rate})
-            
-            df_p = pd.DataFrame(p_list).sort_values(by="Kazanma %", ascending=False)
-            st.dataframe(df_p.style.format({"Kazanma %": "{:.1f}%"}), use_container_width=True)
+            st.dataframe(pd.DataFrame(p_list).sort_values(by="Kazanma %", ascending=False), use_container_width=True)
         else:
             st.info("Komandit verisi için maç yapmalısın.")
 
@@ -535,30 +553,21 @@ def stats_interface():
 def profile_interface():
     st.markdown(f"<h2>👤 Profil: {st.session_state['username']}</h2>", unsafe_allow_html=True)
     
-    # KULLANICI ADI DEĞİŞTİRME
     with st.expander("✏️ Kullanıcı Adı / Şifre Değiştir"):
-        st.warning("Dikkat: Kullanıcı adınızı değiştirirseniz, eski maçlardaki isminiz tabloda güncellenmez. İstatistikleriniz yeni isimle sıfırdan başlar.")
-        new_username = st.text_input("Yeni Kullanıcı Adı (Opsiyonel)", value=st.session_state["username"])
-        new_pass = st.text_input("Yeni Şifre (Opsiyonel)", type="password")
+        st.warning("Dikkat: Kullanıcı adınızı değiştirirseniz, eski istatistikleriniz yeni isme aktarılmaz.")
+        new_username = st.text_input("Yeni Kullanıcı Adı", value=st.session_state["username"])
+        new_pass = st.text_input("Yeni Şifre", type="password")
         
         if st.button("Bilgileri Güncelle"):
-            # Mevcut şifreyi koru eğer boşsa
-            final_pass = new_pass if new_pass else "...." # Aslında mevcut şifreyi çekmek lazım ama güvenlik için boşsa elleme diyelim, şimdilik basit tutalım.
-            # Basit yöntem: Direkt güncelle
-            
-            result = update_user_in_sheet(st.session_state["username"], new_username, new_pass if new_pass else "xxxx", st.session_state["role"])
+            result = update_user_in_sheet(st.session_state["username"], new_username, new_pass if new_pass else "1234", st.session_state["role"])
             if result == "updated":
-                st.success("Profil güncellendi! Lütfen tekrar giriş yapın.")
-                st.session_state["username"] = new_username
-                # Çıkış yaptırıp tekrar girmesini sağlayalım
+                st.success("Profil güncellendi! Girişe yönlendiriliyorsunuz...")
                 st.session_state["logged_in"] = False
                 st.rerun()
 
-    stats, _ = istatistikleri_hesapla() # Match history'ye gerek yok burada
-    if not stats: return
-
+    stats, _ = istatistikleri_hesapla()
     my_name = st.session_state['username']
-    if my_name in stats:
+    if stats and my_name in stats:
         my_stats = stats[my_name]
         c1, c2, c3 = st.columns(3)
         c1.metric("Toplam Maç", my_stats['mac_sayisi'])
@@ -575,7 +584,6 @@ def admin_panel():
     users_df = get_users_from_sheet()
     current_user_role = st.session_state["role"]
     
-    # KULLANICI EKLEME / SİLME
     with st.form("user_mgmt"):
         st.subheader("Kullanıcı İşlemleri")
         c1, c2, c3 = st.columns(3)
@@ -593,7 +601,6 @@ def admin_panel():
                 if current_user_role != "patron" and is_delete:
                     st.error("Silme yetkiniz yok.")
                 else:
-                    # Şifre boşsa varsayılan ata (silme için önemli değil)
                     pwd = u_pass if u_pass else "1234"
                     res = update_user_in_sheet(u_name, u_name, pwd, u_role, delete=is_delete)
                     if res == "deleted": st.success(f"{u_name} silindi.")
@@ -601,12 +608,10 @@ def admin_panel():
                     elif res == "updated": st.success(f"{u_name} güncellendi.")
 
     st.divider()
-    
     if current_user_role == "patron":
         st.subheader("🕵️ Oyuncu Röntgeni")
         user_list = users_df['Username'].tolist() if not users_df.empty and 'Username' in users_df.columns else []
         target_user = st.selectbox("İncelenecek Oyuncu:", user_list)
-        
         if target_user:
             stats, _ = istatistikleri_hesapla()
             if stats and target_user in stats:
