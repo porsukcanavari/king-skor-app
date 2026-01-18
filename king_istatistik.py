@@ -7,7 +7,14 @@ import os
 import json
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS (SENİN AYARLARIN)
+# 🚨 BURAYI DOLDURMAN ÇOK ÖNEMLİ 🚨
+# Google Sheet tablonun tarayıcıdaki linkini tırnak içine yapıştır:
+# =============================================================================
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit?usp=drive_link"
+# (Yukarıdaki linki sil, kendi tablonun linkini yapıştır)
+
+# =============================================================================
+# 0. GÖRSEL AYARLAR VE CSS
 # =============================================================================
 
 def inject_custom_css():
@@ -40,7 +47,7 @@ OYUN_KURALLARI = {
 OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 # =============================================================================
-# 1. GOOGLE SHEETS BAĞLANTISI (MODERN & GÜVENLİ)
+# 1. GOOGLE SHEETS BAĞLANTISI (LINK İLE BAĞLANMA - GARANTİ YÖNTEM)
 # =============================================================================
 
 @st.cache_resource
@@ -54,32 +61,24 @@ def get_google_sheet_client():
     client = gspread.authorize(creds)
     return client
 
+def get_sheet_by_url():
+    """Link ile doğru dosyayı bulur"""
+    client = get_google_sheet_client()
+    # İsim yerine direkt URL ile açıyoruz, hata şansı 0
+    return client.open_by_url(SHEET_URL)
+
 def get_users_from_sheet():
-    """Kullanıcıları güvenli şekilde çeker"""
     try:
-        client = get_google_sheet_client()
-        sheet = client.open("King_Veritabani").worksheet("Users")
+        sheet = get_sheet_by_url().worksheet("Users")
         data = sheet.get_all_records()
         return pd.DataFrame(data)
     except Exception as e:
-        # Hata detayını görmek için st.error açılabilir ama şimdilik boş dönelim
-        return pd.DataFrame()
-
-def init_users_sheet():
-    """Users sayfası boşsa başlıkları ekler"""
-    try:
-        client = get_google_sheet_client()
-        sheet = client.open("King_Veritabani").worksheet("Users")
-        if not sheet.get_all_values():
-            sheet.append_row(["Username", "Password", "Role"])
-            sheet.append_row(["aaykutb", "1234", "patron"])
-    except:
-        pass
+        return pd.DataFrame() # Hata olursa boş dön
 
 def update_user_in_sheet(username, password, role):
     try:
-        client = get_google_sheet_client()
-        sheet = client.open("King_Veritabani").worksheet("Users")
+        wb = get_sheet_by_url()
+        sheet = wb.worksheet("Users")
         
         # Sayfa boşsa başlık at
         if not sheet.get_all_values():
@@ -94,22 +93,20 @@ def update_user_in_sheet(username, password, role):
             else:
                 sheet.append_row([username, password, role])
         except:
-            # Bulamazsa ekle
             sheet.append_row([username, password, role])
-            
         return True
     except Exception as e:
         st.error(f"Kayıt Hatası: {e}")
         return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (GÖRSEL TABLOYU OKUYAN YAPI)
+# 2. İSTATİSTİK MOTORU
 # =============================================================================
 
 def istatistikleri_hesapla():
     try:
-        client = get_google_sheet_client()
-        sheet = client.open("King_Veritabani").worksheet("Maclar")
+        wb = get_sheet_by_url()
+        sheet = wb.worksheet("Maclar")
         raw_data = sheet.get_all_values()
     except:
         return None
@@ -119,19 +116,17 @@ def istatistikleri_hesapla():
     player_stats = {}
     current_players = []
     
-    # Satır satır analiz
     for row in raw_data:
         if not row: continue
         first_cell = str(row[0])
         
-        # 1. Yeni Maç Başlangıcı
+        # 1. Yeni Maç
         if first_cell.startswith("--- MAÇ:"):
             current_players = []
             continue
             
-        # 2. Oyuncu İsimleri (Başlık Satırı)
+        # 2. Oyuncular
         if first_cell == "OYUN TÜRÜ":
-            # [OYUN TÜRÜ, Aykut, Tuna, ...]
             for col_idx in range(1, len(row)):
                 p_name = row[col_idx].strip()
                 if p_name:
@@ -143,17 +138,16 @@ def istatistikleri_hesapla():
                         }
             continue
 
-        # 3. Skor Verisi
+        # 3. Skorlar
         base_name = first_cell.split(" #")[0]
         if base_name in OYUN_KURALLARI and current_players:
             for i, p_name in enumerate(current_players):
                 try:
-                    # i+1 çünkü 0. indeks oyun adı
                     if (i + 1) < len(row):
                         score_str = row[i+1]
-                        if score_str == "" or score_str == " ": continue # Boşsa geç
-                        
+                        if score_str == "" or score_str == " ": continue
                         score = int(score_str)
+                        
                         if p_name in player_stats:
                             stats = player_stats[p_name]
                             stats["toplam_puan"] += score
@@ -174,7 +168,6 @@ def istatistikleri_hesapla():
                     if stats["gecici_mac_puani"] > 0:
                         stats["pozitif_mac_sayisi"] += 1
                     
-                    # Partner (Komandit) Analizi
                     others = [op for op in current_players if op != p_name]
                     for op in others:
                         if op not in stats["partnerler"]:
@@ -186,7 +179,6 @@ def istatistikleri_hesapla():
                         if stats["gecici_mac_puani"] > 0: p_stat["beraber_kazanma"] += 1
                         elif stats["gecici_mac_puani"] < 0: p_stat["beraber_kaybetme"] += 1
 
-            # Sıfırla
             for p in player_stats: player_stats[p]["gecici_mac_puani"] = 0
             current_players = []
 
@@ -207,26 +199,15 @@ def login_screen():
             password = st.text_input("Şifre", type="password")
             
             if st.form_submit_button("Sisteme Gir"):
-                try:
-                    # BAĞLANTIYI TEST EDİYORUZ
-                    users_df = get_users_from_sheet()
-                    
-                    # 1. TABLO BOŞ MU?
-                    if users_df.empty:
-                        st.error("⚠️ Robot tabloyu 'BOŞ' görüyor.")
-                        st.info("İpucu: Drive'daki dosyada 'Users' sayfasına veri girdiğinden ve sayfayı yenilediğinden emin ol.")
-                        return
+                users_df = get_users_from_sheet()
+                
+                if users_df.empty:
+                     st.error("⚠️ HATA: Robot dosyaya bağlandı ama 'Users' sayfası boş veya okunamadı.")
+                     st.info("Lütfen kodun en üstüne doğru Linki yapıştırdığından ve Drive dosyasını 'king-bot' ile paylaştığından emin ol.")
+                     return
 
-                    # 2. KOLONLAR DOĞRU MU?
-                    mevcut_kolonlar = users_df.columns.tolist()
-                    st.write("🔍 Robotun Gördüğü Kolonlar:", mevcut_kolonlar)
-                    
-                    if 'Username' not in users_df.columns:
-                        st.error(f"HATA: 'Username' kolonu bulunamadı! Mevcut olanlar: {mevcut_kolonlar}")
-                        st.warning("Çözüm: Excel'deki başlıkta boşluk olmadığından emin ol (Örn: 'Username ' değil 'Username' olmalı).")
-                        return
-
-                    # 3. GİRİŞ KONTROLÜ
+                if 'Username' in users_df.columns:
+                    # String karşılaştırma (Boşlukları silerek)
                     user_match = users_df[users_df['Username'].astype(str).str.strip() == username.strip()]
                     
                     if not user_match.empty:
@@ -238,13 +219,12 @@ def login_screen():
                             st.success("Giriş Başarılı!")
                             st.rerun()
                         else:
-                            st.error(f"Şifre Hatalı! (Girilen: {password}, Beklenen: {stored_pass})")
+                            st.error("Hatalı şifre!")
                     else:
-                        st.error(f"Kullanıcı '{username}' bulunamadı! Listede olanlar: {users_df['Username'].tolist()}")
+                        st.error("Kullanıcı bulunamadı!")
+                else:
+                    st.error(f"Tablo formatı hatalı! Görünen kolonlar: {users_df.columns.tolist()}")
 
-                except Exception as e:
-                    st.error(f"🚨 TEKNİK HATA: {e}")
-                    
 def logout():
     st.session_state.clear()
     st.rerun()
@@ -300,7 +280,6 @@ def game_interface():
         total_limit = sum([k['limit'] for k in OYUN_KURALLARI.values()])
         oynanan_satir_sayisi = len(df)
         
-        # OYUN BİTİŞİ VE KAYDETME
         if oynanan_satir_sayisi >= total_limit:
             st.success("🏁 OYUN BİTTİ! Geçmiş olsun.")
             cols = st.columns(4)
@@ -311,36 +290,27 @@ def game_interface():
             if st.button("💾 Maçı Arşivle (Drive'a Yaz)"):
                 with st.spinner("Tablo işleniyor..."):
                     try:
-                        client = get_google_sheet_client()
-                        sheet = client.open("King_Veritabani").worksheet("Maclar")
+                        wb = get_sheet_by_url()
+                        sheet = wb.worksheet("Maclar")
                         
-                        # GÖRSEL BLOK OLUŞTURMA
                         tarih = datetime.now().strftime("%d.%m.%Y %H:%M")
                         
-                        # 1. Boşluk
                         sheet.append_row([""] * 5)
-                        # 2. Maç Başlığı
                         header_title = f"--- MAÇ: {st.session_state['current_match_name']} ({tarih}) ---"
                         sheet.append_row([header_title, "", "", "", ""])
-                        # 3. Kolon Başlıkları
                         sheet.append_row(["OYUN TÜRÜ"] + secili_oyuncular)
                         
-                        # 4. Veriler
                         for idx, row in df.iterrows():
-                            # [Rıfkı, -320, 0, 0, 0] formatında
                             row_data = [idx] + [int(row[p]) for p in secili_oyuncular]
                             sheet.append_row(row_data)
                             
-                        # 5. Toplam
                         total_row = ["TOPLAM"] + [int(totals[p]) for p in secili_oyuncular]
                         sheet.append_row(total_row)
-                        # 6. Çizgi
                         sheet.append_row(["----------------------------------------"] * 5)
                         
                         st.balloons()
                         st.success("✅ Maç başarıyla görsel tablo olarak kaydedildi!")
                         
-                        # Temizle
                         st.session_state["temp_df"] = pd.DataFrame()
                         del st.session_state["players"]
                         st.rerun()
@@ -348,7 +318,6 @@ def game_interface():
                         st.error(f"Google Drive Hatası: {e}")
             return
 
-        # VERİ GİRİŞİ (SENİN KODUN)
         mevcut_oyun_index = st.session_state["game_index"]
         if mevcut_oyun_index >= len(OYUN_SIRALAMASI): mevcut_oyun_index = len(OYUN_SIRALAMASI) - 1
 
@@ -372,7 +341,6 @@ def game_interface():
                 if total_input != rules['adet']:
                     st.error(f"Hata: Toplam {rules['adet']} olmalı, sen {total_input} girdin.")
                 else:
-                    # Rıfkı #1 formatı
                     row_name = f"{secilen_oyun} #{current_count + 1}"
                     row_data = {p: inputs[p] * rules['puan'] for p in secili_oyuncular}
                     
@@ -573,5 +541,8 @@ else:
         st.markdown("---")
         if st.button("Çıkış Yap"):
             logout()
-
-
+    
+    if choice == "🎮 Oyun Ekle": game_interface()
+    elif choice == "📊 İstatistikler": stats_interface()
+    elif choice == "👤 Profilim": profile_interface()
+    elif choice == "🛠️ Yönetim Paneli": admin_panel()
