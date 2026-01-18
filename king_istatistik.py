@@ -12,71 +12,54 @@ import json
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS (MOBİL DÜZELTMELERİ YAPILDI)
+# 0. GÖRSEL AYARLAR VE CSS (MOBİL MENÜ KURTARMA OPERASYONU)
 # =============================================================================
 
 def inject_custom_css():
     st.markdown("""
     <style>
-        /* GENEL SAYFA RENGİ */
+        /* --- GENEL --- */
         .stApp { background-color: #0e1117; }
-        
-        /* BAŞLIKLAR */
         h1 { color: #FFD700 !important; text-align: center; text-shadow: 2px 2px 4px #000000; font-family: 'Arial Black', sans-serif; margin-bottom: 10px; }
         h2, h3 { color: #ff4b4b !important; border-bottom: 2px solid #333; padding-bottom: 10px; }
         
-        /* BUTONLAR */
+        /* --- BUTONLAR VE GİRİŞLER --- */
         .stButton > button { width: 100% !important; height: auto !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; font-size: 16px; padding: 12px 20px; white-space: nowrap !important; display: flex; align-items: center; justify-content: center; }
         .stButton > button:hover { background-color: #ff0000; border-color: white; transform: scale(1.01); }
-        
-        /* GİRİŞ KUTULARI */
         div[data-testid="stNumberInput"] button { background-color: #444 !important; color: white !important; border-color: #666 !important; min-height: 40px; min-width: 40px; }
-        
-        /* MOBİL */
-        @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
-        
-        /* İSTATİSTİK KUTULARI */
         div[data-testid="stMetric"] { background-color: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; text-align: center; }
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
+        @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
 
-        /* --- STREAMLIT ARAYÜZ TEMİZLİĞİ (GÜNCELLENDİ) --- */
+        /* --- KRİTİK ARAYÜZ TEMİZLİĞİ --- */
         
-        /* 1. Header'ı GİZLEME (Menü butonu görünsün diye), sadece içindekileri temizle */
+        /* 1. HEADER AYARLARI: Header kalsın ama şeffaf olsun */
         header[data-testid="stHeader"] {
-            background-color: rgba(0,0,0,0); /* Şeffaf */
-            z-index: 1;
+            background: transparent !important;
+        }
+
+        /* 2. SOL ÜST MENÜ BUTONU (HAMBURGER): Bunu ZORLA gösteriyoruz */
+        button[kind="header"] {
+            display: block !important;
+            visibility: visible !important;
+            color: #FFD700 !important; /* Altın sarısı yapıyoruz ki siyah zeminde parlasın */
+            background-color: transparent !important;
+            z-index: 99999 !important;
         }
         
-        /* 2. Renkli Çizgiyi Kaldır */
-        [data-testid="stDecoration"] {
-            display: none;
-        }
+        /* 3. SAĞ ÜSTTEKİLERİ (Toolbar, Profil, 3 Nokta) GİZLE */
+        [data-testid="stToolbar"] { display: none !important; }
+        [data-testid="stHeaderActionElements"] { display: none !important; }
         
-        /* 3. Sağ Üstteki Araçları (Toolbar, Deploy vs) Gizle */
-        [data-testid="stToolbar"] {
-            visibility: hidden;
-            display: none;
-        }
+        /* 4. TEPEDEKİ RENKLİ ÇİZGİYİ KALDIR */
+        [data-testid="stDecoration"] { display: none !important; }
         
-        /* 4. Sağ Üstteki 3 Nokta Menüsü */
-        #MainMenu {
-            visibility: hidden;
-            display: none;
-        }
+        /* 5. FOOTER'I KALDIR */
+        footer { display: none !important; }
         
-        /* 5. Alt Kısımdaki "Made with Streamlit" */
-        footer {
-            visibility: hidden;
-            display: none;
-        }
-        
-        /* 6. SAĞ ALT KÖŞEDEKİ "MANAGE APP" veya "VIEWER BADGE" (Özel Vuruş) */
+        /* 6. SAĞ ALTTAKİ "MANAGE APP" BUTONU (Viewer Badge) - YOK ET */
         .viewerBadge_container__1QSob { display: none !important; }
         div[class*="viewerBadge"] { display: none !important; }
-        .stDeployButton { display: none !important; }
-        
-        /* Sidebar ayarı */
-        section[data-testid="stSidebar"] { top: 0px !important; } 
         
     </style>
     """, unsafe_allow_html=True)
@@ -151,7 +134,7 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU
+# 2. İSTATİSTİK MOTORU (GHOST KING MANTIĞI)
 # =============================================================================
 
 def istatistikleri_hesapla():
@@ -170,6 +153,7 @@ def istatistikleri_hesapla():
     current_players = []
     current_match_data = {} 
     
+    # Maç özel değişkenleri
     is_king_game = False
     king_winner_name = None
 
@@ -177,6 +161,7 @@ def istatistikleri_hesapla():
         if not row: continue
         first_cell = str(row[0])
         
+        # 1. Yeni Maç Başlangıcı
         if first_cell.startswith("--- MAÇ:"):
             current_players = []
             current_match_data = {"baslik": first_cell, "skorlar": [], "oyuncular": []}
@@ -184,6 +169,7 @@ def istatistikleri_hesapla():
             king_winner_name = None
             continue
             
+        # 2. Oyuncular
         if first_cell == "OYUN TÜRÜ":
             for col_idx in range(1, len(row)):
                 p_name = row[col_idx].strip()
@@ -198,6 +184,7 @@ def istatistikleri_hesapla():
                         }
             continue
 
+        # 3. Skor Verisi ve King Kontrolü
         base_name = first_cell.split(" #")[0]
         
         if "KING" in first_cell:
@@ -222,12 +209,14 @@ def istatistikleri_hesapla():
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
                             
+                            # Ceza Analizi (SADECE normal oyunlarda)
                             if score < 0 and base_name in OYUN_KURALLARI and not is_king_game:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
                                 stats["cezalar"][base_name] += int(score/birim)
                 except: continue
 
+        # 4. Maç Sonu Değerlendirmesi
         if first_cell == "TOPLAM":
             current_match_data["toplamlar"] = row
             match_history.append(current_match_data)
@@ -238,15 +227,23 @@ def istatistikleri_hesapla():
                     stats["mac_sayisi"] += 1
                     mac_puani = stats["gecici_mac_puani"]
                     
+                    # --- WIN RATE (BATMA/ÇIKMA) MANTIĞI ---
                     if is_king_game and king_winner_name:
-                        if p_name == king_winner_name: stats["pozitif_mac_sayisi"] += 1
+                        # King yapılmışsa sadece Yapan kazanır
+                        if p_name == king_winner_name:
+                            stats["pozitif_mac_sayisi"] += 1
+                        # Diğerleri kaybeder
                     else:
-                        if mac_puani >= 0: stats["pozitif_mac_sayisi"] += 1
+                        # Normal maç: Puan 0 veya büyükse KAZANIR
+                        if mac_puani >= 0:
+                            stats["pozitif_mac_sayisi"] += 1
                     
+                    # --- REKORLAR ---
                     if not is_king_game:
                         if mac_puani > stats["rekor_max"]: stats["rekor_max"] = mac_puani
                         if mac_puani < stats["rekor_min"]: stats["rekor_min"] = mac_puani
                     
+                    # --- KOMANDİT ---
                     others = [op for op in current_players if op != p_name]
                     for op in others:
                         if op not in stats["partnerler"]:
