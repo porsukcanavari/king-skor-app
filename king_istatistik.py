@@ -208,31 +208,42 @@ def login_screen():
             
             if st.form_submit_button("Sisteme Gir"):
                 try:
-                    # HATA AYIKLAMA MODU AÇIK
-                    init_users_sheet()
+                    # BAĞLANTIYI TEST EDİYORUZ
                     users_df = get_users_from_sheet()
                     
-                    if not users_df.empty and 'Username' in users_df.columns:
-                        user_match = users_df[users_df['Username'].astype(str) == username]
-                        if not user_match.empty:
-                            stored_pass = str(user_match.iloc[0]['Password'])
-                            if stored_pass == str(password):
-                                st.session_state["logged_in"] = True
-                                st.session_state["username"] = username
-                                st.session_state["role"] = user_match.iloc[0]['Role']
-                                st.success("Giriş Başarılı!")
-                                st.rerun()
-                            else:
-                                st.error("Hatalı şifre!")
+                    # 1. TABLO BOŞ MU?
+                    if users_df.empty:
+                        st.error("⚠️ Robot tabloyu 'BOŞ' görüyor.")
+                        st.info("İpucu: Drive'daki dosyada 'Users' sayfasına veri girdiğinden ve sayfayı yenilediğinden emin ol.")
+                        return
+
+                    # 2. KOLONLAR DOĞRU MU?
+                    mevcut_kolonlar = users_df.columns.tolist()
+                    st.write("🔍 Robotun Gördüğü Kolonlar:", mevcut_kolonlar)
+                    
+                    if 'Username' not in users_df.columns:
+                        st.error(f"HATA: 'Username' kolonu bulunamadı! Mevcut olanlar: {mevcut_kolonlar}")
+                        st.warning("Çözüm: Excel'deki başlıkta boşluk olmadığından emin ol (Örn: 'Username ' değil 'Username' olmalı).")
+                        return
+
+                    # 3. GİRİŞ KONTROLÜ
+                    user_match = users_df[users_df['Username'].astype(str).str.strip() == username.strip()]
+                    
+                    if not user_match.empty:
+                        stored_pass = str(user_match.iloc[0]['Password']).strip()
+                        if stored_pass == str(password).strip():
+                            st.session_state["logged_in"] = True
+                            st.session_state["username"] = username
+                            st.session_state["role"] = user_match.iloc[0]['Role']
+                            st.success("Giriş Başarılı!")
+                            st.rerun()
                         else:
-                            st.error("Kullanıcı bulunamadı!")
+                            st.error(f"Şifre Hatalı! (Girilen: {password}, Beklenen: {stored_pass})")
                     else:
-                        st.error("Tablo boş veya kolonlar hatalı.")
-                
+                        st.error(f"Kullanıcı '{username}' bulunamadı! Listede olanlar: {users_df['Username'].tolist()}")
+
                 except Exception as e:
-                    # İŞTE BURASI BİZE GERÇEK HATAYI SÖYLEYECEK
-                    st.error(f"🚨 TEKNİK HATA DETAYI: {e}")
-                    st.write("Lütfen bu hatayı Aykut'a (Yapay Zeka'ya) kopyala.")
+                    st.error(f"🚨 TEKNİK HATA: {e}")
                     
 def logout():
     st.session_state.clear()
@@ -562,4 +573,5 @@ else:
         st.markdown("---")
         if st.button("Çıkış Yap"):
             logout()
+
 
