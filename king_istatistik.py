@@ -242,11 +242,11 @@ def logout():
     st.rerun()
 
 # =============================================================================
-# 5. OYUN YÖNETİM ARAYÜZÜ
+# 5. OYUN YÖNETİM ARAYÜZÜ (GÜNCELLENDİ: OYUN EKLE)
 # =============================================================================
 
 def game_interface():
-    st.markdown("<h2>🎮 Oyun Masası</h2>", unsafe_allow_html=True)
+    st.markdown("<h2>🎮 Oyun Ekle</h2>", unsafe_allow_html=True)
     
     # --- MASA KURMA ---
     if not os.path.exists(TEMP_GAME_FILE):
@@ -567,14 +567,14 @@ else:
         
         menu = ["📊 İstatistikler", "👤 Profilim"]
         if st.session_state["role"] in ["admin", "patron"]:
-            menu = ["🎮 Oyun Masası", "🛠️ Yönetim Paneli"] + menu
+            menu = ["🎮 Oyun Ekle", "🛠️ Yönetim Paneli"] + menu
             
         choice = st.radio("Navigasyon", menu)
         st.markdown("---")
         if st.button("Çıkış Yap"):
             logout()
     
-    if choice == "🎮 Oyun Masası": game_interface()
+    if choice == "🎮 Oyun Ekle": game_interface()
     elif choice == "📊 İstatistikler": stats_interface()
     elif choice == "👤 Profilim": profile_interface()
     elif choice == "🛠️ Yönetim Paneli": admin_panel()
