@@ -13,7 +13,7 @@ import time
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS (MOBİL MENÜ TAMİR EDİLDİ)
+# 0. GÖRSEL AYARLAR VE CSS (YAN MENÜ İPTAL - TAM EKRAN MODU)
 # =============================================================================
 
 def inject_custom_css():
@@ -21,63 +21,48 @@ def inject_custom_css():
     <style>
         /* --- GENEL --- */
         .stApp { background-color: #0e1117; }
-        h1 { color: #FFD700 !important; text-align: center; text-shadow: 2px 2px 4px #000000; font-family: 'Arial Black', sans-serif; margin-bottom: 10px; }
+        
+        /* BAŞLIKLAR */
+        h1 { color: #FFD700 !important; text-align: center; text-shadow: 2px 2px 4px #000000; font-family: 'Arial Black', sans-serif; margin-bottom: 5px; }
         h2, h3 { color: #ff4b4b !important; border-bottom: 2px solid #333; padding-bottom: 10px; }
         
-        /* --- BUTONLAR VE GİRİŞLER --- */
-        .stButton > button { width: 100% !important; height: auto !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; font-size: 16px; padding: 12px 20px; white-space: nowrap !important; display: flex; align-items: center; justify-content: center; }
+        /* BUTONLAR */
+        .stButton > button { width: 100% !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; }
         .stButton > button:hover { background-color: #ff0000; border-color: white; transform: scale(1.01); }
-        div[data-testid="stNumberInput"] button { background-color: #444 !important; color: white !important; border-color: #666 !important; min-height: 40px; min-width: 40px; }
+        
+        /* RADYO BUTONLARI (YATAY MENÜ İÇİN ÖZEL) */
+        div[role="radiogroup"] {
+            background-color: #262730;
+            padding: 10px;
+            border-radius: 15px;
+            display: flex;
+            justify-content: center;
+            overflow-x: auto; /* Mobilde taşarsa kaydır */
+        }
+        div[role="radiogroup"] label {
+            color: white !important;
+            font-weight: bold !important;
+            font-size: 16px !important;
+            padding: 0 10px;
+        }
+        
+        /* GİRİŞ KUTULARI VE METRİKLER */
+        div[data-testid="stNumberInput"] button { background-color: #444 !important; color: white !important; }
         div[data-testid="stMetric"] { background-color: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; text-align: center; }
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
-        @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
 
-        /* --- KRİTİK MOBİL MENÜ VE ARAYÜZ AYARLARI --- */
+        /* --- STREAMLIT ARAYÜZÜNÜ KOMPLE GİZLEME (TEMİZ EKRAN) --- */
+        header {visibility: hidden !important; display: none !important;}
+        [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+        [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
+        footer {visibility: hidden !important; display: none !important;}
+        section[data-testid="stSidebar"] {visibility: hidden !important; display: none !important;} /* Yan menüyü kökten kapat */
         
-        /* 1. Header Kapsayıcısını GÖRÜNÜR yap ama ARKASINI ŞEFFAF yap */
-        header[data-testid="stHeader"] {
-            background: transparent !important;
-            visibility: visible !important; /* Bunu gizlersek buton da gider */
+        /* İçeriği yukarı çek */
+        .block-container {
+            padding-top: 2rem !important;
+            padding-bottom: 1rem !important;
         }
-
-        /* 2. Sağ üstteki araçları (Deploy, 3 nokta, Toolbar) YOK ET */
-        [data-testid="stToolbar"] {
-            visibility: hidden !important;
-            display: none !important;
-        }
-        [data-testid="stHeaderActionElements"] {
-            visibility: hidden !important;
-            display: none !important;
-        }
-
-        /* 3. SOL ÜSTTEKİ MENÜ BUTONUNU (Hamburger) CANLANDIR */
-        /* Farklı tarayıcılar için birden fazla selektör kullanıyoruz */
-        button[kind="header"] {
-            visibility: visible !important;
-            display: block !important;
-            color: #FFD700 !important; /* Altın Sarısı */
-            background: transparent !important;
-        }
-        [data-testid="baseButton-header"] {
-            visibility: visible !important;
-            display: block !important;
-            color: #FFD700 !important;
-        }
-        [data-testid="collapsedControl"] {
-            visibility: visible !important;
-            display: block !important;
-            color: #FFD700 !important;
-        }
-        
-        /* 4. Tepedeki Renkli Çizgiyi Kaldır */
-        [data-testid="stDecoration"] { visibility: hidden !important; display: none !important; }
-        
-        /* 5. Footer'ı Kaldır */
-        footer { visibility: hidden !important; display: none !important; }
-        
-        /* 6. Sağ Alttaki "Manage App" Butonunu Kaldır */
-        .viewerBadge_container__1QSob { display: none !important; }
-        div[class*="viewerBadge"] { display: none !important; }
         
     </style>
     """, unsafe_allow_html=True)
@@ -152,7 +137,6 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         return False
 
 def delete_match_from_sheet(match_title):
-    """Belirtilen başlığa sahip maçı Maclar sayfasından siler."""
     try:
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Maclar")
@@ -161,12 +145,9 @@ def delete_match_from_sheet(match_title):
         start_index = -1
         end_index = -1
         
-        # Maçın başlangıç ve bitiş satırlarını bul
         for i, row in enumerate(all_values):
             if row and str(row[0]) == match_title:
-                start_index = i + 1 # gspread 1-based index kullanır
-                
-                # Bitiş satırını (--- çizgisi) bul
+                start_index = i + 1 
                 for j in range(i, len(all_values)):
                     if all_values[j] and str(all_values[j][0]).startswith("----------------"):
                         end_index = j + 1
@@ -199,7 +180,6 @@ def istatistikleri_hesapla():
 
     player_stats = {}
     match_history = [] 
-    
     current_players = []
     current_match_data = {} 
     
@@ -242,7 +222,6 @@ def istatistikleri_hesapla():
         
         if (base_name in OYUN_KURALLARI or "KING" in first_cell) and current_players:
             current_match_data["skorlar"].append(row)
-            
             for i, p_name in enumerate(current_players):
                 try:
                     if (i + 1) < len(row):
@@ -344,8 +323,7 @@ def logout():
 # =============================================================================
 
 def game_interface():
-    st.markdown("<h2>🎮 Oyun Ekle</h2>", unsafe_allow_html=True)
-    
+    # Başlık zaten üstte olacak
     if "game_active" not in st.session_state: st.session_state["game_active"] = False
     if "temp_df" not in st.session_state: st.session_state["temp_df"] = pd.DataFrame()
     if "king_mode" not in st.session_state: st.session_state["king_mode"] = False
@@ -722,7 +700,7 @@ def admin_panel():
                             st.rerun()
 
 # =============================================================================
-# 9. ANA UYGULAMA ÇATISI
+# 9. ANA UYGULAMA ÇATISI (GÜNCELLENDİ: YATAY MENÜ)
 # =============================================================================
 
 st.set_page_config(page_title="King İstatistik Kurumu", layout="wide", page_icon="👑")
@@ -733,18 +711,26 @@ if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 if not st.session_state["logged_in"]:
     login_screen()
 else:
-    with st.sidebar:
-        st.markdown(f"### 👑 {st.session_state['username']}")
-        st.caption(f"Yetki: {st.session_state['role'].upper()}")
-        menu = ["📊 İstatistikler", "👤 Profilim"]
-        if st.session_state["role"] in ["admin", "patron"]:
-            menu = ["🎮 Oyun Ekle", "🛠️ Yönetim Paneli"] + menu
-        choice = st.radio("Navigasyon", menu)
-        st.markdown("---")
+    # --- YENİ YATAY NAVİGASYON (Sidebar yerine) ---
+    st.markdown(f"<h3 style='text-align: center;'>👑 {st.session_state['username']}</h3>", unsafe_allow_html=True)
+    
+    menu_options = ["📊 İstatistikler", "👤 Profilim"]
+    if st.session_state["role"] in ["admin", "patron"]:
+        menu_options = ["🎮 Oyun Ekle", "🛠️ Yönetim Paneli"] + menu_options
+        
+    # Yatay Radyo Butonu (Tab Görünümü)
+    selected_page = st.radio("", menu_options, horizontal=True, label_visibility="collapsed")
+    
+    # Çıkış Butonu (Sağ Üstte Küçük)
+    col_x1, col_x2 = st.columns([6, 1])
+    with col_x2:
         if st.button("Çıkış Yap"):
             logout()
     
-    if choice == "🎮 Oyun Ekle": game_interface()
-    elif choice == "📊 İstatistikler": stats_interface()
-    elif choice == "👤 Profilim": profile_interface()
-    elif choice == "🛠️ Yönetim Paneli": admin_panel()
+    st.markdown("---") # Ayrım çizgisi
+
+    # Sayfa Yönlendirme
+    if selected_page == "🎮 Oyun Ekle": game_interface()
+    elif selected_page == "📊 İstatistikler": stats_interface()
+    elif selected_page == "👤 Profilim": profile_interface()
+    elif selected_page == "🛠️ Yönetim Paneli": admin_panel()
