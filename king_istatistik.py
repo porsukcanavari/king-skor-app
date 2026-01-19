@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 import json
 import time
+import uuid
 
 # =============================================================================
 # 🚨 SABİT AYARLAR VE LİNKLER
@@ -13,7 +14,7 @@ import time
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS (YAN MENÜ İPTAL - TAM EKRAN MODU)
+# 0. GÖRSEL AYARLAR VE CSS
 # =============================================================================
 
 def inject_custom_css():
@@ -21,8 +22,6 @@ def inject_custom_css():
     <style>
         /* --- GENEL --- */
         .stApp { background-color: #0e1117; }
-        
-        /* BAŞLIKLAR */
         h1 { color: #FFD700 !important; text-align: center; text-shadow: 2px 2px 4px #000000; font-family: 'Arial Black', sans-serif; margin-bottom: 5px; }
         h2, h3 { color: #ff4b4b !important; border-bottom: 2px solid #333; padding-bottom: 10px; }
         
@@ -30,14 +29,14 @@ def inject_custom_css():
         .stButton > button { width: 100% !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; }
         .stButton > button:hover { background-color: #ff0000; border-color: white; transform: scale(1.01); }
         
-        /* RADYO BUTONLARI (YATAY MENÜ İÇİN ÖZEL) */
+        /* RADYO BUTONLARI (YATAY MENÜ) */
         div[role="radiogroup"] {
             background-color: #262730;
             padding: 10px;
             border-radius: 15px;
             display: flex;
             justify-content: center;
-            overflow-x: auto; /* Mobilde taşarsa kaydır */
+            overflow-x: auto;
         }
         div[role="radiogroup"] label {
             color: white !important;
@@ -46,24 +45,22 @@ def inject_custom_css():
             padding: 0 10px;
         }
         
-        /* GİRİŞ KUTULARI VE METRİKLER */
+        /* GİRİŞLER VE TABLOLAR */
         div[data-testid="stNumberInput"] button { background-color: #444 !important; color: white !important; }
         div[data-testid="stMetric"] { background-color: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; text-align: center; }
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
 
-        /* --- STREAMLIT ARAYÜZÜNÜ KOMPLE GİZLEME (TEMİZ EKRAN) --- */
+        /* --- ARAYÜZ TEMİZLİĞİ --- */
         header {visibility: hidden !important; display: none !important;}
         [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
         [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
         footer {visibility: hidden !important; display: none !important;}
-        section[data-testid="stSidebar"] {visibility: hidden !important; display: none !important;} /* Yan menüyü kökten kapat */
+        section[data-testid="stSidebar"] {visibility: hidden !important; display: none !important;}
         
-        /* İçeriği yukarı çek */
         .block-container {
             padding-top: 2rem !important;
             padding-bottom: 1rem !important;
         }
-        
     </style>
     """, unsafe_allow_html=True)
 
@@ -80,7 +77,7 @@ OYUN_KURALLARI = {
 OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 # =============================================================================
-# 1. GOOGLE SHEETS BAĞLANTISI
+# 1. GOOGLE SHEETS BAĞLANTISI VE ID SİSTEMİ
 # =============================================================================
 
 @st.cache_resource
@@ -98,38 +95,117 @@ def get_sheet_by_url():
     client = get_google_sheet_client()
     return client.open_by_url(SHEET_URL)
 
+def check_and_fix_user_ids():
+    """Users tablosunda ID sistemi yoksa kurar."""
+    try:
+        wb = get_sheet_by_url()
+        sheet = wb.worksheet("Users")
+        all_data = sheet.get_all_values()
+        
+        if not all_data: return # Boşsa işlem yapma
+        
+        headers = all_data[0]
+        # Eğer 'UserID' kolonu yoksa ekle
+        if "UserID" not in headers:
+            # Başlığa ekle
+            headers.append("UserID")
+            # Her satıra ID ekle
+            new_data = [headers]
+            for row in all_data[1:]:
+                row.append(str(uuid.uuid4())[:8]) # Kısa ID
+                new_data.append(row)
+            
+            sheet.clear()
+            sheet.update(new_data)
+            return True
+    except:
+        pass
+    return False
+
 def get_users_from_sheet():
     try:
+        check_and_fix_user_ids() # Önce ID kontrolü
         sheet = get_sheet_by_url().worksheet("Users")
         data = sheet.get_all_records()
         return pd.DataFrame(data)
     except Exception as e:
         return pd.DataFrame()
 
+def update_match_history_names(old_name, new_name):
+    """Maç geçmişindeki eski isimleri yeni isimle değiştirir."""
+    try:
+        wb = get_sheet_by_url()
+        sheet = wb.worksheet("Maclar")
+        all_values = sheet.get_all_values()
+        
+        updated_data = []
+        is_changed = False
+        
+        for row in all_values:
+            new_row = []
+            for cell in row:
+                if str(cell).strip() == old_name.strip():
+                    new_row.append(new_name)
+                    is_changed = True
+                else:
+                    # King satırı kontrolü: "👑 KING (EskiIsim)" -> "👑 KING (YeniIsim)"
+                    if "KING" in str(cell) and f"({old_name})" in str(cell):
+                        new_cell = str(cell).replace(f"({old_name})", f"({new_name})")
+                        new_row.append(new_cell)
+                        is_changed = True
+                    else:
+                        new_row.append(cell)
+            updated_data.append(new_row)
+            
+        if is_changed:
+            sheet.clear()
+            sheet.update(updated_data)
+            return True
+        return False
+    except Exception as e:
+        st.error(f"Geçmiş Güncelleme Hatası: {e}")
+        return False
+
 def update_user_in_sheet(old_username, new_username, password, role, delete=False):
     try:
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Users")
+        
+        # Sayfa boşsa başlık at
         if not sheet.get_all_values():
-            sheet.append_row(["Username", "Password", "Role"])
+            sheet.append_row(["Username", "Password", "Role", "UserID"])
+
         try:
+            # Kullanıcı adını bul
             cell = sheet.find(old_username)
+            
             if cell:
                 if delete:
                     sheet.delete_rows(cell.row)
                     return "deleted"
                 else:
+                    # Güncelleme
+                    # Kolon sırası: Username(1), Password(2), Role(3), UserID(4)
                     sheet.update_cell(cell.row, 1, new_username)
                     sheet.update_cell(cell.row, 2, password)
                     sheet.update_cell(cell.row, 3, role)
+                    
+                    # Eğer isim değiştiyse, GEÇMİŞ MAÇLARI DA GÜNCELLE
+                    if old_username != new_username:
+                        update_match_history_names(old_username, new_username)
+                        
                     return "updated"
             else:
+                # Yeni Ekleme
                 if not delete:
-                    sheet.append_row([new_username, password, role])
+                    new_id = str(uuid.uuid4())[:8]
+                    sheet.append_row([new_username, password, role, new_id])
                     return "added"
         except:
+            # Bulunamadıysa ve silme değilse ekle
             if not delete:
-                sheet.append_row([new_username, password, role])
+                new_id = str(uuid.uuid4())[:8]
+                sheet.append_row([new_username, password, role, new_id])
                 return "added"
         return False
     except Exception as e:
@@ -159,7 +235,6 @@ def delete_match_from_sheet(match_title):
             return True
         else:
             return False
-            
     except Exception as e:
         st.error(f"Silme Hatası: {e}")
         return False
@@ -323,12 +398,10 @@ def logout():
 # =============================================================================
 
 def game_interface():
-    # Başlık zaten üstte olacak
     if "game_active" not in st.session_state: st.session_state["game_active"] = False
     if "temp_df" not in st.session_state: st.session_state["temp_df"] = pd.DataFrame()
     if "king_mode" not in st.session_state: st.session_state["king_mode"] = False
 
-    # --- MASA KURMA ---
     if not st.session_state["game_active"]:
         st.info("Yeni maç başlatın veya geçmiş bir maçı sisteme girin.")
         users_df = get_users_from_sheet()
@@ -361,7 +434,6 @@ def game_interface():
             st.error("⛔ En fazla 4 kişi seçebilirsin!")
         return 
 
-    # --- OYUN OYNAMA ---
     else:
         df = st.session_state["temp_df"]
         secili_oyuncular = st.session_state["players"]
@@ -373,7 +445,6 @@ def game_interface():
         total_limit = sum([k['limit'] for k in OYUN_KURALLARI.values()])
         oynanan_satir_sayisi = len(df)
         
-        # OYUN BİTİŞ
         if oynanan_satir_sayisi >= total_limit or st.session_state["king_mode"]:
             st.success("🏁 OYUN BİTTİ!")
             cols = st.columns(4)
@@ -412,7 +483,6 @@ def game_interface():
                         st.error(f"Google Drive Hatası: {e}")
             return
 
-        # KING BUTTON
         st.markdown("---")
         if st.button("👑 KING YAPILDI (OYUNU BİTİR)", type="secondary"):
              st.session_state["show_king_dialog"] = True
@@ -432,7 +502,6 @@ def game_interface():
 
         st.markdown("---")
         
-        # VERİ GİRİŞİ (AKILLI LİMİT)
         mevcut_oyun_index = st.session_state["game_index"]
         if mevcut_oyun_index >= len(OYUN_SIRALAMASI): mevcut_oyun_index = len(OYUN_SIRALAMASI) - 1
 
@@ -601,7 +670,7 @@ def profile_interface():
         c3.metric("Başarı %", f"%{win_rate:.1f}")
 
 # =============================================================================
-# 8. YÖNETİM PANELİ (GÜNCELLENMİŞ: MAÇ SİLME + YETKİ KISITI)
+# 8. YÖNETİM PANELİ
 # =============================================================================
 
 def admin_panel():
