@@ -6,7 +6,6 @@ from datetime import datetime
 import os
 import json
 import time
-import uuid
 
 # =============================================================================
 # 🚨 SABİT AYARLAR VE LİNKLER
@@ -96,23 +95,21 @@ def get_sheet_by_url():
     return client.open_by_url(SHEET_URL)
 
 def check_and_fix_user_ids():
-    """Users tablosunda ID sistemi yoksa kurar."""
+    """Users tablosunda ID sistemi yoksa veya eksikse sıralı tamir eder."""
     try:
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Users")
         all_data = sheet.get_all_values()
         
-        if not all_data: return # Boşsa işlem yapma
+        if not all_data: return 
         
         headers = all_data[0]
-        # Eğer 'UserID' kolonu yoksa ekle
+        # Eğer 'UserID' kolonu yoksa ekle ve 0'dan başlayarak dağıt
         if "UserID" not in headers:
-            # Başlığa ekle
             headers.append("UserID")
-            # Her satıra ID ekle
             new_data = [headers]
-            for row in all_data[1:]:
-                row.append(str(uuid.uuid4())[:8]) # Kısa ID
+            for i, row in enumerate(all_data[1:]):
+                row.append(i) # 0, 1, 2...
                 new_data.append(row)
             
             sheet.clear()
@@ -124,7 +121,7 @@ def check_and_fix_user_ids():
 
 def get_users_from_sheet():
     try:
-        check_and_fix_user_ids() # Önce ID kontrolü
+        check_and_fix_user_ids() 
         sheet = get_sheet_by_url().worksheet("Users")
         data = sheet.get_all_records()
         return pd.DataFrame(data)
@@ -148,7 +145,6 @@ def update_match_history_names(old_name, new_name):
                     new_row.append(new_name)
                     is_changed = True
                 else:
-                    # King satırı kontrolü: "👑 KING (EskiIsim)" -> "👑 KING (YeniIsim)"
                     if "KING" in str(cell) and f"({old_name})" in str(cell):
                         new_cell = str(cell).replace(f"({old_name})", f"({new_name})")
                         new_row.append(new_cell)
@@ -171,12 +167,10 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Users")
         
-        # Sayfa boşsa başlık at
         if not sheet.get_all_values():
             sheet.append_row(["Username", "Password", "Role", "UserID"])
 
         try:
-            # Kullanıcı adını bul
             cell = sheet.find(old_username)
             
             if cell:
@@ -185,26 +179,37 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
                     return "deleted"
                 else:
                     # Güncelleme
-                    # Kolon sırası: Username(1), Password(2), Role(3), UserID(4)
                     sheet.update_cell(cell.row, 1, new_username)
                     sheet.update_cell(cell.row, 2, password)
                     sheet.update_cell(cell.row, 3, role)
                     
-                    # Eğer isim değiştiyse, GEÇMİŞ MAÇLARI DA GÜNCELLE
                     if old_username != new_username:
                         update_match_history_names(old_username, new_username)
-                        
                     return "updated"
             else:
-                # Yeni Ekleme
+                # --- YENİ KULLANICI EKLEME VE SIRALI ID HESAPLAMA ---
                 if not delete:
-                    new_id = str(uuid.uuid4())[:8]
+                    # Tüm veriyi çek
+                    all_values = sheet.get_all_values()
+                    
+                    # Başlık hariç (all_values[1:]) UserID kolonundaki (4. sütun -> index 3) sayıları al
+                    current_ids = []
+                    if len(all_values) > 1:
+                        for row in all_values[1:]:
+                            if len(row) >= 4 and str(row[3]).isdigit():
+                                current_ids.append(int(row[3]))
+                    
+                    # En büyük ID'yi bul ve 1 ekle. Liste boşsa 0 ver.
+                    new_id = max(current_ids) + 1 if current_ids else 0
+                    
                     sheet.append_row([new_username, password, role, new_id])
                     return "added"
         except:
-            # Bulunamadıysa ve silme değilse ekle
             if not delete:
-                new_id = str(uuid.uuid4())[:8]
+                # Hata durumunda güvenli liman: yine listeyi çekip hesapla
+                all_values = sheet.get_all_values()
+                current_ids = [int(row[3]) for row in all_values[1:] if len(row) >= 4 and str(row[3]).isdigit()]
+                new_id = max(current_ids) + 1 if current_ids else 0
                 sheet.append_row([new_username, password, role, new_id])
                 return "added"
         return False
