@@ -13,7 +13,7 @@ import time
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS
+# 0. GÖRSEL AYARLAR VE CSS (MOBİL MENÜ TAMİR EDİLDİ)
 # =============================================================================
 
 def inject_custom_css():
@@ -32,13 +32,50 @@ def inject_custom_css():
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
         @media only screen and (max-width: 600px) { h1 { font-size: 24px !important; } h2 { font-size: 20px !important; } }
 
-        /* --- ARAYÜZ TEMİZLİĞİ --- */
-        header[data-testid="stHeader"] { background: transparent !important; }
-        button[kind="header"] { display: block !important; visibility: visible !important; color: #FFD700 !important; background-color: transparent !important; z-index: 99999 !important; }
-        [data-testid="stToolbar"] { display: none !important; }
-        [data-testid="stHeaderActionElements"] { display: none !important; }
-        [data-testid="stDecoration"] { display: none !important; }
-        footer { display: none !important; }
+        /* --- KRİTİK MOBİL MENÜ VE ARAYÜZ AYARLARI --- */
+        
+        /* 1. Header Kapsayıcısını GÖRÜNÜR yap ama ARKASINI ŞEFFAF yap */
+        header[data-testid="stHeader"] {
+            background: transparent !important;
+            visibility: visible !important; /* Bunu gizlersek buton da gider */
+        }
+
+        /* 2. Sağ üstteki araçları (Deploy, 3 nokta, Toolbar) YOK ET */
+        [data-testid="stToolbar"] {
+            visibility: hidden !important;
+            display: none !important;
+        }
+        [data-testid="stHeaderActionElements"] {
+            visibility: hidden !important;
+            display: none !important;
+        }
+
+        /* 3. SOL ÜSTTEKİ MENÜ BUTONUNU (Hamburger) CANLANDIR */
+        /* Farklı tarayıcılar için birden fazla selektör kullanıyoruz */
+        button[kind="header"] {
+            visibility: visible !important;
+            display: block !important;
+            color: #FFD700 !important; /* Altın Sarısı */
+            background: transparent !important;
+        }
+        [data-testid="baseButton-header"] {
+            visibility: visible !important;
+            display: block !important;
+            color: #FFD700 !important;
+        }
+        [data-testid="collapsedControl"] {
+            visibility: visible !important;
+            display: block !important;
+            color: #FFD700 !important;
+        }
+        
+        /* 4. Tepedeki Renkli Çizgiyi Kaldır */
+        [data-testid="stDecoration"] { visibility: hidden !important; display: none !important; }
+        
+        /* 5. Footer'ı Kaldır */
+        footer { visibility: hidden !important; display: none !important; }
+        
+        /* 6. Sağ Alttaki "Manage App" Butonunu Kaldır */
         .viewerBadge_container__1QSob { display: none !important; }
         div[class*="viewerBadge"] { display: none !important; }
         
@@ -137,7 +174,6 @@ def delete_match_from_sheet(match_title):
                 break
         
         if start_index != -1 and end_index != -1:
-            # Gspread delete_rows(start, end)
             sheet.delete_rows(start_index, end_index)
             return True
         else:
@@ -418,7 +454,7 @@ def game_interface():
 
         st.markdown("---")
         
-        # VERİ GİRİŞİ
+        # VERİ GİRİŞİ (AKILLI LİMİT)
         mevcut_oyun_index = st.session_state["game_index"]
         if mevcut_oyun_index >= len(OYUN_SIRALAMASI): mevcut_oyun_index = len(OYUN_SIRALAMASI) - 1
 
@@ -625,23 +661,18 @@ def admin_panel():
 
     st.divider()
     
-    # 2. MAÇ YÖNETİMİ (YENİ ÖZELLİK: MAÇ SİLME)
+    # 2. MAÇ YÖNETİMİ
     st.subheader("🗑️ Maç Yönetimi")
     _, match_history = istatistikleri_hesapla()
     
     if match_history:
-        # Maç listesi (Ters sıralı)
         match_options = [f"{m['baslik']}" for m in match_history][::-1]
-        
-        # Seçim kutusu
         selected_delete_match = st.selectbox("Silinecek Maçı Seçin:", match_options, key="del_match_select")
         
-        # Silme butonu
         if st.button("Seçili Maçı Sil", type="primary"):
             st.session_state["pending_delete_match"] = selected_delete_match
             st.rerun()
             
-        # Maç Silme Onayı
         if "pending_delete_match" in st.session_state and st.session_state["pending_delete_match"]:
             match_to_del = st.session_state["pending_delete_match"]
             st.error(f"⚠️ **{match_to_del}** kaydını silmek üzeresiniz. Bu işlem geri alınamaz!")
@@ -650,7 +681,7 @@ def admin_panel():
                 if delete_match_from_sheet(match_to_del):
                     st.success("Maç başarıyla silindi.")
                     del st.session_state["pending_delete_match"]
-                    time.sleep(1) # Kullanıcı mesajı görsün
+                    time.sleep(1)
                     st.rerun()
             if col_m2.button("❌ İptal", key="cancel_match_del"):
                 del st.session_state["pending_delete_match"]
@@ -705,7 +736,6 @@ else:
     with st.sidebar:
         st.markdown(f"### 👑 {st.session_state['username']}")
         st.caption(f"Yetki: {st.session_state['role'].upper()}")
-        st.caption("*(Telefondaysan sol üstten menüyü aç)*")
         menu = ["📊 İstatistikler", "👤 Profilim"]
         if st.session_state["role"] in ["admin", "patron"]:
             menu = ["🎮 Oyun Ekle", "🛠️ Yönetim Paneli"] + menu
