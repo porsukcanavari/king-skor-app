@@ -19,16 +19,18 @@ STARTING_ELO = 1000
 K_FACTOR = 32
 SOLO_MULTIPLIER = 1.5
 
-# EĞİTİM VİDEOLARI (Senin Playlistten Konuya Göre Eşleşme)
-# Not: Youtube playlistindeki videolara göre konu eşleştirmesi yapıldı.
+# EĞİTİM VİDEOLARI (Playlist Linkleri)
+# Not: Eğer video "Kullanılamıyor" derse alttaki butondan açılacak.
+PLAYLIST_LINK = "https://www.youtube.com/playlist?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA"
+
 VIDEO_MAP = {
-    "Rıfkı": "https://www.youtube.com/embed/videoseries?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA", # Genel liste
-    "Kız Almaz": "https://www.youtube.com/embed/videoseries?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA",
-    "Erkek Almaz": "https://www.youtube.com/embed/videoseries?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA",
-    "Kupa Almaz": "https://www.youtube.com/embed/videoseries?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA",
-    "El Almaz": "https://www.youtube.com/embed/videoseries?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA",
-    "Son İki": "https://www.youtube.com/embed/videoseries?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA",
-    "Koz (Tümü)": "https://www.youtube.com/embed/videoseries?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA"
+    "Rıfkı": PLAYLIST_LINK, 
+    "Kız Almaz": PLAYLIST_LINK,
+    "Erkek Almaz": PLAYLIST_LINK,
+    "Kupa Almaz": PLAYLIST_LINK,
+    "El Almaz": PLAYLIST_LINK,
+    "Son İki": PLAYLIST_LINK,
+    "Koz (Tümü)": PLAYLIST_LINK
 }
 
 # =============================================================================
@@ -47,6 +49,22 @@ def inject_custom_css():
         .stButton > button { width: 100% !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; }
         .stButton > button:hover { background-color: #ff0000; border-color: white; transform: scale(1.01); }
         
+        /* LİNK BUTONU (Video İçin) */
+        .stLinkButton > a { 
+            width: 100% !important; 
+            background-color: #262730 !important; 
+            color: #FFD700 !important; 
+            border: 1px solid #FFD700 !important; 
+            font-weight: bold !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .stLinkButton > a:hover {
+            background-color: #FFD700 !important;
+            color: black !important;
+        }
+
         /* YATAY MENÜ */
         div[role="radiogroup"] {
             background-color: #262730;
@@ -656,7 +674,7 @@ def stats_interface():
             st.dataframe(pd.DataFrame(p_list).sort_values(by="Kazanma %", ascending=False), use_container_width=True)
 
 # =============================================================================
-# 7. PROFİL EKRANI (KARİYER MODU)
+# 7. PROFİL EKRANI (KARİYER MODU - DÜZELTİLDİ)
 # =============================================================================
 
 def profile_interface():
@@ -688,11 +706,23 @@ def profile_interface():
         
         st.divider()
         
-        # 2. AKILLI KOÇ (VİDEO ÖNERİSİ)
+        # 2. AKILLI KOÇ (VİDEO VE LİNK ÖNERİSİ)
         st.subheader("🎓 Akıllı Koç Analizi")
         if fav_ceza in VIDEO_MAP:
             st.info(f"Koç diyor ki: **{fav_ceza}** cezasını çok yiyorsun (%{fav_oran:.0f}). Bu konuda zayıfsın, şu dersi izle:")
-            st.video(VIDEO_MAP[fav_ceza])
+            
+            # YouTube Linki
+            video_url = VIDEO_MAP[fav_ceza]
+            
+            # Embed'i göstermeye çalış
+            try:
+                st.video(video_url)
+            except:
+                st.warning("Video önizlemesi yüklenemedi.")
+                
+            # YEDEK BUTON: Eğer embed çalışmazsa bu butona basılır
+            st.link_button(label="📺 Videoyu YouTube'da İzlemek İçin Tıkla", url=video_url)
+            
         else:
             st.success("Harika! Belirgin bir zayıflığın yok gibi görünüyor. Şimdilik temiz oyun!")
             
