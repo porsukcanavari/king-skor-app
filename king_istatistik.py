@@ -26,6 +26,16 @@ VIDEO_MAP = {
     "Kupa Almaz": PLAYLIST_LINK, "El Almaz": PLAYLIST_LINK, "Son İki": PLAYLIST_LINK, "Koz (Tümü)": PLAYLIST_LINK
 }
 
+# KOMİK UNVANLAR (REWIND İÇİN)
+FUNNY_TITLES = {
+    "Rıfkı": "🩸 Rıfkızede",
+    "Kız Almaz": "💔 Kızların Sevgilisi",
+    "Erkek Almaz": "👨‍❤️‍👨 Erkek Koleksiyoncusu",
+    "Kupa Almaz": "🍷 Kupa Canavarı",
+    "El Almaz": "🧹 Çöpçü",
+    "Son İki": "🛑 Son Durak"
+}
+
 # =============================================================================
 # 0. GÖRSEL AYARLAR VE CSS
 # =============================================================================
@@ -156,6 +166,7 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
                     sheet.update_cell(cell.row, 1, new_username)
                     sheet.update_cell(cell.row, 2, password)
                     sheet.update_cell(cell.row, 3, role)
+                    if old_username != new_username: update_match_history_names(old_username, new_username)
                     return "updated"
             else:
                 if not delete:
@@ -172,7 +183,41 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
                     new_id = max(current_ids) + 1 if current_ids else 0
                     sheet.append_row([new_username, password, role, new_id, STARTING_ELO])
                     return "added"
-        except: return False
+        except:
+            if not delete:
+                sheet.append_row([new_username, password, role, 0, STARTING_ELO])
+                return "added"
+        return False
+    except Exception as e:
+        st.error(f"Kayıt Hatası: {e}")
+        return False
+
+def update_match_history_names(old_name, new_name):
+    try:
+        wb = get_sheet_by_url()
+        sheet = wb.worksheet("Maclar")
+        all_values = sheet.get_all_values()
+        updated_data = []
+        is_changed = False
+        for row in all_values:
+            new_row = []
+            for cell in row:
+                cell_str = str(cell).strip()
+                if cell_str == old_name.strip():
+                    new_row.append(new_name)
+                    is_changed = True
+                elif "KING" in cell_str and f"({old_name})" in cell_str:
+                    new_cell = cell_str.replace(f"({old_name})", f"({new_name})")
+                    new_row.append(new_cell)
+                    is_changed = True
+                else:
+                    new_row.append(cell)
+            updated_data.append(new_row)
+        if is_changed:
+            sheet.clear()
+            sheet.update(updated_data)
+            return True
+        return False
     except: return False
 
 def delete_match_from_sheet(match_title):
@@ -196,7 +241,7 @@ def delete_match_from_sheet(match_title):
     except: return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (DÜZELTİLDİ)
+# 2. İSTATİSTİK MOTORU (TARİH, SERİLER VE REWIND)
 # =============================================================================
 
 def calculate_expected_score(rating_a, rating_b):
@@ -210,7 +255,6 @@ def parse_date_from_header(header_str):
         return datetime.now()
 
 def istatistikleri_hesapla():
-    # 1. Veriyi Çek
     try:
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Maclar")
@@ -219,34 +263,34 @@ def istatistikleri_hesapla():
 
     if not raw_data: return None, None, None
 
-    # 2. Değişkenleri Tanımla (HATA BURADAYDI, ŞİMDİ GARANTİ)
     player_stats = {}
     elo_ratings = {} 
     all_matches_chronological = []
     match_history = [] 
     
     current_players = []
-    current_match_data = {} # Başlangıçta boş
+    current_match_data = {} 
     
-    # 3. Satır Satır Oku
+    is_king_game = False
+    king_winner_name = None
+
     for row in raw_data:
         if not row: continue
         first_cell = str(row[0])
         
-        # --- MAÇ BAŞLANGICI ---
         if first_cell.startswith("--- MAÇ:"):
             current_players = []
-            # Yeni maç başladığında current_match_data'yı sıfırla
             current_match_data = {
                 "baslik": first_cell, 
                 "tarih": parse_date_from_header(first_cell), 
                 "skorlar": [], 
                 "oyuncular": [],
-                "ceza_detaylari": {}
+                "ceza_detaylari": {} 
             }
+            is_king_game = False
+            king_winner_name = None
             continue
             
-        # --- OYUNCU İSİMLERİ ---
         if first_cell == "OYUN TÜRÜ":
             for col_idx in range(1, len(row)):
                 p_name = row[col_idx].strip()
@@ -266,18 +310,13 @@ def istatistikleri_hesapla():
             continue
 
         base_name = first_cell.split(" #")[0]
-        is_king_game = "KING" in first_cell
-        king_winner_name = None
-        if is_king_game:
+        if "KING" in first_cell:
+            is_king_game = True
             try: king_winner_name = first_cell.split("(")[1].split(")")[0]
-            except: pass
+            except: king_winner_name = None 
         
-        # --- SKOR VERİSİ ---
-        if (base_name in OYUN_KURALLARI or is_king_game) and current_players:
-            # current_match_data'nın boş olmadığından emin ol (Header okunduysa doludur)
-            if "skorlar" in current_match_data:
-                current_match_data["skorlar"].append(row)
-            
+        if (base_name in OYUN_KURALLARI or "KING" in first_cell) and current_players:
+            if "skorlar" in current_match_data: current_match_data["skorlar"].append(row)
             for i, p_name in enumerate(current_players):
                 try:
                     if (i + 1) < len(row):
@@ -296,40 +335,29 @@ def istatistikleri_hesapla():
                                 count = int(score/birim)
                                 stats["cezalar"][base_name] += count
                                 
-                                if "ceza_detaylari" in current_match_data:
-                                    if p_name not in current_match_data["ceza_detaylari"]:
-                                        current_match_data["ceza_detaylari"][p_name] = {}
-                                    if base_name not in current_match_data["ceza_detaylari"][p_name]:
-                                        current_match_data["ceza_detaylari"][p_name][base_name] = 0
-                                    current_match_data["ceza_detaylari"][p_name][base_name] += count
+                                if p_name not in current_match_data["ceza_detaylari"]:
+                                    current_match_data["ceza_detaylari"][p_name] = {}
+                                if base_name not in current_match_data["ceza_detaylari"][p_name]:
+                                    current_match_data["ceza_detaylari"][p_name][base_name] = 0
+                                current_match_data["ceza_detaylari"][p_name][base_name] += count
                 except: continue
 
-        # --- MAÇ SONU (TOPLAM) ---
         if first_cell == "TOPLAM":
-            # Eğer current_match_data boşsa (Header yoksa) işlem yapma
             if not current_match_data: continue
-
             current_match_data["toplamlar"] = row
             match_elos = {p: elo_ratings.get(p, STARTING_ELO) for p in current_players}
             match_results = {}
-            winners_count = 0
-            losers_count = 0
+            winners_count = 0; losers_count = 0
             
             for i, p_name in enumerate(current_players):
                 try:
                     total_score = int(row[i+1])
                     match_results[p_name] = total_score
-                    current_match_data["sonuclar"] = match_results
-                    
                     is_win = False
-                    if "KING" in current_match_data.get("baslik", ""): # Basliktan kontrol et
-                         # King kazananını bulmak zor olabilir, burada basitleştiriyoruz
-                         # Eğer oyuncu king yapmışsa (genelde en yüksek puandır ama king satırından da anlaşılır)
-                         # Yukarıda king_winner_name'i aslında satır bazlı almıştık ama burada sıfırlanıyor
-                         pass 
-                    
-                    # Basit Win logic: Puan >= 0
-                    if total_score >= 0: is_win = True
+                    if is_king_game:
+                        if p_name == king_winner_name: is_win = True
+                    else:
+                        if total_score >= 0: is_win = True
                     
                     if is_win: winners_count += 1
                     else: losers_count += 1
@@ -337,8 +365,7 @@ def istatistikleri_hesapla():
                     stats = player_stats[p_name]
                     stats["mac_sayisi"] += 1
                     if is_win: stats["pozitif_mac_sayisi"] += 1
-                    
-                    if "KING" not in current_match_data.get("baslik", ""):
+                    if not is_king_game:
                         if total_score > stats["rekor_max"]: stats["rekor_max"] = total_score
                         if total_score < stats["rekor_min"]: stats["rekor_min"] = total_score
                         
@@ -352,23 +379,21 @@ def istatistikleri_hesapla():
                         if is_win: p_stat["beraber_kazanma"] += 1
                         else: p_stat["beraber_kaybetme"] += 1
                 except: pass
+            
+            current_match_data["sonuclar"] = match_results # Rewind için ekle
 
-            # ELO Hesapla
             new_elo_values = {}
             for p_name in current_players:
                 my_current_elo = match_elos[p_name]
                 actual_score = 1 if match_results.get(p_name, -1) >= 0 else 0
-                
                 opponents = [match_elos[op] for op in current_players if op != p_name]
                 if opponents: avg_opponent_elo = sum(opponents) / len(opponents)
                 else: avg_opponent_elo = STARTING_ELO 
                 
                 expected_score = calculate_expected_score(my_current_elo, avg_opponent_elo)
                 change = K_FACTOR * (actual_score - expected_score)
-                
                 if actual_score == 1 and winners_count == 1: change *= SOLO_MULTIPLIER
                 elif actual_score == 0 and losers_count == 1: change *= SOLO_MULTIPLIER
-                
                 new_elo_values[p_name] = my_current_elo + change
             
             for p_name, val in new_elo_values.items():
@@ -377,19 +402,26 @@ def istatistikleri_hesapla():
             
             all_matches_chronological.append(current_match_data)
             match_history.append(current_match_data)
-            
             for p in player_stats: player_stats[p]["gecici_mac_puani"] = 0
             current_players = []
 
-    # 4. Streak Hesapla
     all_matches_chronological.sort(key=lambda x: x['tarih'])
     temp_streaks = {}
     for match in all_matches_chronological:
         for p_name in match['oyuncular']:
             if p_name not in temp_streaks: temp_streaks[p_name] = {'win': 0, 'loss': 0}
-            score = match['sonuclar'].get(p_name, 0)
-            is_win = score >= 0
+            # Skor verisini 'sonuclar'dan al
+            score = match['sonuclar'].get(p_name, -1)
             
+            is_win = score >= 0
+            # King özel durumu
+            if "KING" in match['baslik'] and "KING" in match['toplamlar'][0]:
+                 # Basitce King yapan kazanır
+                 try:
+                     winner = match['toplamlar'][0].split("(")[1].split(")")[0]
+                     is_win = (p_name == winner)
+                 except: pass
+
             if is_win:
                 temp_streaks[p_name]['win'] += 1; temp_streaks[p_name]['loss'] = 0
             else:
@@ -550,7 +582,7 @@ def kkd_leaderboard_interface():
         st.dataframe(elo_table.style.format({'Başarı %': "{:.1f}%", 'KKD Puanı': "{:.0f}"}), use_container_width=True)
 
 # =============================================================================
-# 6. İSTATİSTİK ARAYÜZÜ (REWIND & STREAK)
+# 6. İSTATİSTİK ARAYÜZÜ (REWIND GÜNCELLENDİ)
 # =============================================================================
 
 def stats_interface():
@@ -561,7 +593,6 @@ def stats_interface():
     tabs = st.tabs(["🔥 Seriler (Streak)", "📅 Rewind (Özet)", "🏆 Genel", "📜 Arşiv", "🚫 Cezalar", "🤝 Komandit"])
     df_stats = pd.DataFrame.from_dict(stats, orient='index')
 
-    # 1. SERİLER
     with tabs[0]:
         st.subheader("🔥 Galibiyet ve Mağlubiyet Serileri")
         st.caption("Maç tarihine göre hesaplanır.")
@@ -572,9 +603,8 @@ def stats_interface():
         c2.error(f"💀 **En Uzun Mağlubiyet:**\n\n# {worst_streaker} ({df_stats['max_loss_streak'].max()} Maç)")
         st.dataframe(df_stats[['win_streak', 'max_win_streak', 'loss_streak', 'max_loss_streak']].sort_values('win_streak', ascending=False), use_container_width=True)
 
-    # 2. REWIND
     with tabs[1]:
-        st.subheader("📅 Zaman Tüneli")
+        st.subheader("📅 Zaman Tüneli (Eğlenceli Özet)")
         if not chronological_matches: st.info("Tarih verisi yok."); return
         all_dates = sorted([m['tarih'] for m in chronological_matches], reverse=True)
         years = sorted(list(set([d.year for d in all_dates])), reverse=True)
@@ -598,20 +628,63 @@ def stats_interface():
             period_stats = {}
             for m in filtered_matches:
                 for p_name in m['oyuncular']:
-                    if p_name not in period_stats: period_stats[p_name] = {'puan': 0, 'Rıfkı': 0, 'Kız Almaz': 0, 'Erkek Almaz': 0}
-                    idx = m['oyuncular'].index(p_name)
-                    try: period_stats[p_name]['puan'] += int(m['toplamlar'][idx+1])
-                    except: pass
+                    if p_name not in period_stats: 
+                        # wins: Kazanılan maç sayısı, matches: Oynanan, puan: Tie-breaker için toplam puan
+                        period_stats[p_name] = {'wins': 0, 'matches': 0, 'puan': 0}
+                        # Cezaları da başlat
+                        for c_key in FUNNY_TITLES.keys(): period_stats[p_name][c_key] = 0
+                    
+                    period_stats[p_name]['matches'] += 1
+                    score = m['sonuclar'].get(p_name, -1)
+                    
+                    # Win check
+                    is_win = False
+                    if "KING" in m['baslik'] and "KING" in m['toplamlar'][0]:
+                        try:
+                            winner = m['toplamlar'][0].split("(")[1].split(")")[0]
+                            is_win = (p_name == winner)
+                        except: pass
+                    elif score >= 0: is_win = True
+                    
+                    if is_win: period_stats[p_name]['wins'] += 1
+                    period_stats[p_name]['puan'] += score
+                    
+                    # Cezalar
                     if p_name in m['ceza_detaylari']:
                         for c_type, count in m['ceza_detaylari'][p_name].items():
                             if c_type in period_stats[p_name]: period_stats[p_name][c_type] += count
+
             if period_stats:
                 df_p = pd.DataFrame.from_dict(period_stats, orient='index')
-                cc1, cc2, cc3 = st.columns(3)
-                cc1.success(f"👑 **Kral:** {df_p['puan'].idxmax()}")
-                cc2.error(f"🩸 **Rıfkızede:** {df_p['Rıfkı'].idxmax()}")
-                cc3.warning(f"💔 **Kızların Sevgilisi:** {df_p['Kız Almaz'].idxmax()}")
-                st.dataframe(df_p.sort_values('puan', ascending=False), use_container_width=True)
+                df_p['win_rate'] = (df_p['wins'] / df_p['matches']) * 100
+                
+                # 1. KRAL SEÇİMİ (Win Rate'e göre, eşitse Puana göre)
+                king_of_period = df_p.sort_values(by=['win_rate', 'puan'], ascending=False).index[0]
+                king_stats = df_p.loc[king_of_period]
+                
+                st.success(f"👑 **Dönemin Kralı:** {king_of_period} (WR: %{king_stats['win_rate']:.1f})")
+                
+                st.markdown("### 🏆 Onur (ve Utanç) Tablosu")
+                # Her Ceza Türü İçin Kartlar
+                cols = st.columns(3)
+                col_idx = 0
+                
+                for c_type, title in FUNNY_TITLES.items():
+                    # En çok yiyeni bul (Sayı olarak)
+                    victim = df_p[c_type].idxmax()
+                    count = df_p.loc[victim, c_type]
+                    matches = df_p.loc[victim, 'matches']
+                    rate = count / matches if matches > 0 else 0
+                    
+                    if count > 0:
+                        with cols[col_idx % 3]:
+                            st.error(f"**{title}**\n\n**{victim}**\n\nTop: {count} | Ort: {rate:.1f}")
+                        col_idx += 1
+                
+                st.divider()
+                st.write("**Detaylı Dönem Tablosu**")
+                st.dataframe(df_p[['matches', 'wins', 'win_rate', 'puan']].sort_values('win_rate', ascending=False).style.format({'win_rate': "{:.1f}%"}), use_container_width=True)
+
         else: st.warning("Maç yok.")
 
     with tabs[2]:
@@ -743,21 +816,13 @@ def admin_panel():
     
     st.divider()
     st.subheader("📋 Kullanıcılar")
-    if "pending_delete_user" in st.session_state and st.session_state["pending_delete_user"]:
-        target = st.session_state["pending_delete_user"]
-        st.error(f"{target} silinecek!")
-        if st.button("✅ Onayla", key="conf_usr"):
-            update_user_in_sheet(target, target, "x", "user", delete=True)
-            del st.session_state["pending_delete_user"]
-            st.rerun()
-
     if not users_df.empty and 'Username' in users_df.columns:
         for index, row in users_df.iterrows():
             c1, c2 = st.columns([4,1])
             c1.write(f"**{row['Username']}** ({row['Role']})")
             if current_user_role == "patron" and row['Username'] != st.session_state["username"]:
                 if c2.button("Sil", key=f"del_{row['Username']}"):
-                    st.session_state["pending_delete_user"] = row['Username']
+                    update_user_in_sheet(row['Username'], row['Username'], "x", "x", delete=True)
                     st.rerun()
 
 # =============================================================================
