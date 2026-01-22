@@ -26,14 +26,15 @@ VIDEO_MAP = {
     "Kupa Almaz": PLAYLIST_LINK, "El Almaz": PLAYLIST_LINK, "Son İki": PLAYLIST_LINK, "Koz (Tümü)": PLAYLIST_LINK
 }
 
-# KOMİK UNVANLAR (REWIND İÇİN)
+# KOMİK UNVANLAR (REWIND İÇİN GÜNCELLENDİ)
 FUNNY_TITLES = {
     "Rıfkı": "🩸 Rıfkızede",
     "Kız Almaz": "💔 Kızların Sevgilisi",
     "Erkek Almaz": "👨‍❤️‍👨 Erkek Koleksiyoncusu",
     "Kupa Almaz": "🍷 Kupa Canavarı",
-    "El Almaz": "🧹 Çöpçü",
-    "Son İki": "🛑 Son Durak"
+    "El Almaz": "🤲 El Arsızı", # Güncellendi
+    "Son İki": "🛑 Son Durak",
+    "Koz (Tümü)": "♠️ Koz Baronu" # Eklendi
 }
 
 # =============================================================================
@@ -241,7 +242,7 @@ def delete_match_from_sheet(match_title):
     except: return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (TARİH, SERİLER VE REWIND)
+# 2. İSTATİSTİK MOTORU
 # =============================================================================
 
 def calculate_expected_score(rating_a, rating_b):
@@ -329,6 +330,7 @@ def istatistikleri_hesapla():
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
                             
+                            # Ceza Sayacı
                             if score < 0 and base_name in OYUN_KURALLARI and not is_king_game:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
@@ -361,6 +363,7 @@ def istatistikleri_hesapla():
                     
                     if is_win: winners_count += 1
                     else: losers_count += 1
+                    match_scores[p_name] = 1 if is_win else 0
                     
                     stats = player_stats[p_name]
                     stats["mac_sayisi"] += 1
@@ -380,7 +383,7 @@ def istatistikleri_hesapla():
                         else: p_stat["beraber_kaybetme"] += 1
                 except: pass
             
-            current_match_data["sonuclar"] = match_results # Rewind için ekle
+            current_match_data["sonuclar"] = match_results
 
             new_elo_values = {}
             for p_name in current_players:
@@ -410,13 +413,9 @@ def istatistikleri_hesapla():
     for match in all_matches_chronological:
         for p_name in match['oyuncular']:
             if p_name not in temp_streaks: temp_streaks[p_name] = {'win': 0, 'loss': 0}
-            # Skor verisini 'sonuclar'dan al
             score = match['sonuclar'].get(p_name, -1)
-            
             is_win = score >= 0
-            # King özel durumu
             if "KING" in match['baslik'] and "KING" in match['toplamlar'][0]:
-                 # Basitce King yapan kazanır
                  try:
                      winner = match['toplamlar'][0].split("(")[1].split(")")[0]
                      is_win = (p_name == winner)
@@ -582,7 +581,7 @@ def kkd_leaderboard_interface():
         st.dataframe(elo_table.style.format({'Başarı %': "{:.1f}%", 'KKD Puanı': "{:.0f}"}), use_container_width=True)
 
 # =============================================================================
-# 6. İSTATİSTİK ARAYÜZÜ (REWIND GÜNCELLENDİ)
+# 6. İSTATİSTİK ARAYÜZÜ
 # =============================================================================
 
 def stats_interface():
@@ -604,7 +603,7 @@ def stats_interface():
         st.dataframe(df_stats[['win_streak', 'max_win_streak', 'loss_streak', 'max_loss_streak']].sort_values('win_streak', ascending=False), use_container_width=True)
 
     with tabs[1]:
-        st.subheader("📅 Zaman Tüneli (Eğlenceli Özet)")
+        st.subheader("📅 Zaman Tüneli")
         if not chronological_matches: st.info("Tarih verisi yok."); return
         all_dates = sorted([m['tarih'] for m in chronological_matches], reverse=True)
         years = sorted(list(set([d.year for d in all_dates])), reverse=True)
@@ -629,15 +628,12 @@ def stats_interface():
             for m in filtered_matches:
                 for p_name in m['oyuncular']:
                     if p_name not in period_stats: 
-                        # wins: Kazanılan maç sayısı, matches: Oynanan, puan: Tie-breaker için toplam puan
                         period_stats[p_name] = {'wins': 0, 'matches': 0, 'puan': 0}
-                        # Cezaları da başlat
                         for c_key in FUNNY_TITLES.keys(): period_stats[p_name][c_key] = 0
                     
                     period_stats[p_name]['matches'] += 1
                     score = m['sonuclar'].get(p_name, -1)
                     
-                    # Win check
                     is_win = False
                     if "KING" in m['baslik'] and "KING" in m['toplamlar'][0]:
                         try:
@@ -649,7 +645,6 @@ def stats_interface():
                     if is_win: period_stats[p_name]['wins'] += 1
                     period_stats[p_name]['puan'] += score
                     
-                    # Cezalar
                     if p_name in m['ceza_detaylari']:
                         for c_type, count in m['ceza_detaylari'][p_name].items():
                             if c_type in period_stats[p_name]: period_stats[p_name][c_type] += count
@@ -658,19 +653,16 @@ def stats_interface():
                 df_p = pd.DataFrame.from_dict(period_stats, orient='index')
                 df_p['win_rate'] = (df_p['wins'] / df_p['matches']) * 100
                 
-                # 1. KRAL SEÇİMİ (Win Rate'e göre, eşitse Puana göre)
                 king_of_period = df_p.sort_values(by=['win_rate', 'puan'], ascending=False).index[0]
                 king_stats = df_p.loc[king_of_period]
                 
                 st.success(f"👑 **Dönemin Kralı:** {king_of_period} (WR: %{king_stats['win_rate']:.1f})")
                 
                 st.markdown("### 🏆 Onur (ve Utanç) Tablosu")
-                # Her Ceza Türü İçin Kartlar
                 cols = st.columns(3)
                 col_idx = 0
                 
                 for c_type, title in FUNNY_TITLES.items():
-                    # En çok yiyeni bul (Sayı olarak)
                     victim = df_p[c_type].idxmax()
                     count = df_p.loc[victim, c_type]
                     matches = df_p.loc[victim, 'matches']
