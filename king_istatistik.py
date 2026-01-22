@@ -26,15 +26,15 @@ VIDEO_MAP = {
     "Kupa Almaz": PLAYLIST_LINK, "El Almaz": PLAYLIST_LINK, "Son İki": PLAYLIST_LINK, "Koz (Tümü)": PLAYLIST_LINK
 }
 
-# KOMİK UNVANLAR (REWIND İÇİN GÜNCELLENDİ)
+# KOMİK UNVANLAR
 FUNNY_TITLES = {
     "Rıfkı": "🩸 Rıfkızede",
     "Kız Almaz": "💔 Kızların Sevgilisi",
     "Erkek Almaz": "👨‍❤️‍👨 Erkek Koleksiyoncusu",
     "Kupa Almaz": "🍷 Kupa Canavarı",
-    "El Almaz": "🤲 El Arsızı", # Güncellendi
+    "El Almaz": "🤲 El Arsızı", 
     "Son İki": "🛑 Son Durak",
-    "Koz (Tümü)": "♠️ Koz Baronu" # Eklendi
+    "Koz (Tümü)": "♠️ Koz Baronu" 
 }
 
 # =============================================================================
@@ -330,7 +330,7 @@ def istatistikleri_hesapla():
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
                             
-                            # Ceza Sayacı
+                            # Ceza Sayacı (ÖNEMLİ: Tablo için burası kritik)
                             if score < 0 and base_name in OYUN_KURALLARI and not is_king_game:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
@@ -581,7 +581,7 @@ def kkd_leaderboard_interface():
         st.dataframe(elo_table.style.format({'Başarı %': "{:.1f}%", 'KKD Puanı': "{:.0f}"}), use_container_width=True)
 
 # =============================================================================
-# 6. İSTATİSTİK ARAYÜZÜ
+# 6. İSTATİSTİK ARAYÜZÜ (REWIND & STREAK)
 # =============================================================================
 
 def stats_interface():
@@ -592,6 +592,7 @@ def stats_interface():
     tabs = st.tabs(["🔥 Seriler (Streak)", "📅 Rewind (Özet)", "🏆 Genel", "📜 Arşiv", "🚫 Cezalar", "🤝 Komandit"])
     df_stats = pd.DataFrame.from_dict(stats, orient='index')
 
+    # 1. SERİLER
     with tabs[0]:
         st.subheader("🔥 Galibiyet ve Mağlubiyet Serileri")
         st.caption("Maç tarihine göre hesaplanır.")
@@ -695,10 +696,35 @@ def stats_interface():
                 st.dataframe(pd.DataFrame(rows, columns=cols), use_container_width=True)
     with tabs[4]:
         st.subheader("🚫 Ceza Analizi")
-        ceza_list = [k for k in OYUN_KURALLARI.keys() if OYUN_KURALLARI[k]['puan'] < 0]
-        selected_ceza = st.selectbox("Ceza Türü Seç:", ceza_list)
-        ceza_data = {p: stats[p]['cezalar'].get(selected_ceza, 0) / stats[p]['mac_sayisi'] if stats[p]['mac_sayisi']>0 else 0 for p in stats}
-        st.bar_chart(pd.Series(ceza_data))
+        # 1. Veriyi Hazırla (Matris: Oyuncular x Cezalar)
+        ceza_records = []
+        for p_name, p_data in stats.items():
+            # Oyuncunun ceza sözlüğünü al
+            row = p_data['cezalar'].copy()
+            # Eksik cezaları 0 ile doldur
+            for k in OYUN_KURALLARI.keys():
+                if k not in row: row[k] = 0
+            row['Oyuncu'] = p_name
+            ceza_records.append(row)
+        
+        if ceza_records:
+            df_ceza = pd.DataFrame(ceza_records)
+            df_ceza.set_index('Oyuncu', inplace=True)
+            
+            # 2. Tabloyu Göster (Isı haritası gibi renklendir)
+            st.write("### 🟥 Kim Ne Kadar Yedi?")
+            st.dataframe(df_ceza.style.background_gradient(cmap="Reds"), use_container_width=True)
+            
+            st.divider()
+            
+            # 3. Grafik Seçeneği (Opsiyonel olarak altta kalsın)
+            st.write("### 📊 Grafiksel Gösterim")
+            ceza_turu = st.selectbox("Grafikte Gösterilecek Ceza:", list(OYUN_KURALLARI.keys()))
+            chart_data = df_ceza[ceza_turu]
+            st.bar_chart(chart_data)
+        else:
+            st.warning("Henüz ceza verisi yok.")
+
     with tabs[5]:
         st.subheader("🤝 Komanditlik")
         me = st.session_state["username"]
