@@ -7,19 +7,21 @@ import os
 import json
 import time
 import math
+import uuid # ID üretimi için gerekli
 
 # =============================================================================
 # 🚨 SABİT AYARLAR VE LİNKLER
 # =============================================================================
+# BURAYA KENDİ LİNKİNİ YAPIŞTIRMAYI UNUTMA
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
 # ELO (KKD) AYARLARI
 STARTING_ELO = 1000
 K_FACTOR = 32
-SOLO_MULTIPLIER = 1.5 # Tek başına batan veya çıkan için çarpan (x1.5)
+SOLO_MULTIPLIER = 1.5 # Tek tabanca bonusu
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS
+# 0. GÖRSEL AYARLAR VE CSS (YATAY MENÜ - MOBİL DOSTU)
 # =============================================================================
 
 def inject_custom_css():
@@ -34,7 +36,7 @@ def inject_custom_css():
         .stButton > button { width: 100% !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; }
         .stButton > button:hover { background-color: #ff0000; border-color: white; transform: scale(1.01); }
         
-        /* MENÜ */
+        /* YATAY MENÜ (TAB BAR) */
         div[role="radiogroup"] {
             background-color: #262730;
             padding: 10px;
@@ -42,28 +44,31 @@ def inject_custom_css():
             display: flex;
             justify-content: center;
             overflow-x: auto;
+            white-space: nowrap;
         }
         div[role="radiogroup"] label {
             color: white !important;
             font-weight: bold !important;
             font-size: 16px !important;
-            padding: 0 10px;
+            padding: 0 15px;
+            cursor: pointer;
         }
         
-        /* GİRİŞLER */
+        /* GİRİŞ KUTULARI VE TABLOLAR */
         div[data-testid="stNumberInput"] button { background-color: #444 !important; color: white !important; }
         div[data-testid="stMetric"] { background-color: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; text-align: center; }
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
 
-        /* --- TEMİZLİK & MOBİL --- */
+        /* --- ARAYÜZ TEMİZLİĞİ (HEADER & FOOTER GİZLEME) --- */
         header {visibility: hidden !important; display: none !important;}
         [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
         [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
         footer {visibility: hidden !important; display: none !important;}
         section[data-testid="stSidebar"] {visibility: hidden !important; display: none !important;}
+        .viewerBadge_container__1QSob { display: none !important; }
         
         .block-container {
-            padding-top: 2rem !important;
+            padding-top: 1rem !important;
             padding-bottom: 1rem !important;
         }
     </style>
@@ -82,7 +87,7 @@ OYUN_KURALLARI = {
 OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 # =============================================================================
-# 1. GOOGLE SHEETS BAĞLANTISI
+# 1. GOOGLE SHEETS BAĞLANTISI VE OTOMATİK TAMİR SİSTEMİ
 # =============================================================================
 
 @st.cache_resource
@@ -101,32 +106,43 @@ def get_sheet_by_url():
     return client.open_by_url(SHEET_URL)
 
 def check_and_fix_sheet_structure():
+    """Users tablosunda ID ve KKD kolonlarını kontrol eder, yoksa ekler."""
     try:
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Users")
         all_data = sheet.get_all_values()
+        
         if not all_data: return 
+        
         headers = all_data[0]
         is_changed = False
+        
+        # 1. UserID Kontrolü (Sıralı ID verilir)
         if "UserID" not in headers:
             headers.append("UserID")
-            for i, row in enumerate(all_data[1:]): row.append(i)
+            for i, row in enumerate(all_data[1:]):
+                row.append(i) # Mevcutlara 0, 1, 2... ver
             is_changed = True
+            
+        # 2. KKD (ELO) Kontrolü
         if "KKD" not in headers:
             headers.append("KKD")
-            for row in all_data[1:]: row.append(STARTING_ELO)
+            for row in all_data[1:]:
+                row.append(STARTING_ELO) # Varsayılan 1000
             is_changed = True
+            
         if is_changed:
             new_data = [headers] + all_data[1:]
             sheet.clear()
             sheet.update(new_data)
             return True
-    except: pass
+    except:
+        pass
     return False
 
 def get_users_from_sheet():
     try:
-        check_and_fix_sheet_structure() 
+        check_and_fix_sheet_structure() # Her veri çekişte yapıyı kontrol et
         sheet = get_sheet_by_url().worksheet("Users")
         data = sheet.get_all_records()
         return pd.DataFrame(data)
@@ -139,19 +155,28 @@ def save_elos_to_users_sheet(elo_data):
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Users")
         all_values = sheet.get_all_values()
+        
         if not all_values: return False
+        
         headers = all_values[0]
         try:
             username_idx = headers.index("Username")
             kkd_idx = headers.index("KKD")
-        except ValueError: return False 
+        except ValueError:
+            return False 
+            
         updated_data = [headers]
         for row in all_values[1:]:
             u_name = row[username_idx]
+            # Satırı genişlet (Eğer KKD kolonu varsa ama satır kısaysa)
+            while len(row) <= kkd_idx:
+                row.append("")
+            
             if u_name in elo_data:
-                while len(row) <= kkd_idx: row.append("")
                 row[kkd_idx] = int(elo_data[u_name])
+            
             updated_data.append(row)
+            
         sheet.clear()
         sheet.update(updated_data)
         return True
@@ -160,26 +185,29 @@ def save_elos_to_users_sheet(elo_data):
         return False
 
 def update_match_history_names(old_name, new_name):
+    """İsim değişikliğinde eski maçları günceller."""
     try:
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Maclar")
         all_values = sheet.get_all_values()
         updated_data = []
         is_changed = False
+        
         for row in all_values:
             new_row = []
             for cell in row:
-                if str(cell).strip() == old_name.strip():
+                cell_str = str(cell).strip()
+                if cell_str == old_name.strip():
                     new_row.append(new_name)
                     is_changed = True
+                elif "KING" in cell_str and f"({old_name})" in cell_str:
+                    new_cell = cell_str.replace(f"({old_name})", f"({new_name})")
+                    new_row.append(new_cell)
+                    is_changed = True
                 else:
-                    if "KING" in str(cell) and f"({old_name})" in str(cell):
-                        new_cell = str(cell).replace(f"({old_name})", f"({new_name})")
-                        new_row.append(new_cell)
-                        is_changed = True
-                    else:
-                        new_row.append(cell)
+                    new_row.append(cell)
             updated_data.append(new_row)
+            
         if is_changed:
             sheet.clear()
             sheet.update(updated_data)
@@ -209,6 +237,7 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
                     return "updated"
             else:
                 if not delete:
+                    # Yeni ID Bulma (Max + 1)
                     all_values = sheet.get_all_values()
                     current_ids = []
                     if len(all_values) > 1:
@@ -223,6 +252,7 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
                     sheet.append_row([new_username, password, role, new_id, STARTING_ELO])
                     return "added"
         except:
+            # Fallback ekleme
             if not delete:
                 sheet.append_row([new_username, password, role, 0, STARTING_ELO])
                 return "added"
@@ -256,10 +286,11 @@ def delete_match_from_sheet(match_title):
         return False
 
 # =============================================================================
-# 2. İSTATİSTİK VE ELO MOTORU (HIGH STAKES EDITION)
+# 2. İSTATİSTİK VE ELO (KKD) MOTORU
 # =============================================================================
 
 def calculate_expected_score(rating_a, rating_b):
+    """ELO kazanma ihtimali formülü."""
     return 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
 
 def istatistikleri_hesapla():
@@ -286,6 +317,7 @@ def istatistikleri_hesapla():
         if not row: continue
         first_cell = str(row[0])
         
+        # --- YENİ MAÇ BAŞLANGICI ---
         if first_cell.startswith("--- MAÇ:"):
             current_players = []
             current_match_data = {"baslik": first_cell, "skorlar": [], "oyuncular": []}
@@ -293,12 +325,14 @@ def istatistikleri_hesapla():
             king_winner_name = None
             continue
             
+        # --- OYUNCU LİSTESİ ---
         if first_cell == "OYUN TÜRÜ":
             for col_idx in range(1, len(row)):
                 p_name = row[col_idx].strip()
                 if p_name:
                     current_players.append(p_name)
                     current_match_data["oyuncular"].append(p_name)
+                    
                     if p_name not in player_stats:
                         player_stats[p_name] = {
                             "mac_sayisi": 0, "toplam_puan": 0, "pozitif_mac_sayisi": 0,
@@ -312,11 +346,13 @@ def istatistikleri_hesapla():
 
         base_name = first_cell.split(" #")[0]
         
+        # King Kontrolü
         if "KING" in first_cell:
             is_king_game = True
             try: king_winner_name = first_cell.split("(")[1].split(")")[0]
             except: king_winner_name = None 
         
+        # --- SKORLAR ---
         if (base_name in OYUN_KURALLARI or "KING" in first_cell) and current_players:
             current_match_data["skorlar"].append(row)
             for i, p_name in enumerate(current_players):
@@ -325,24 +361,29 @@ def istatistikleri_hesapla():
                         score_str = row[i+1]
                         if score_str == "" or score_str == " ": continue
                         score = int(score_str)
+                        
                         if p_name in player_stats:
                             stats = player_stats[p_name]
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
+                            
+                            # Ceza Analizi
                             if score < 0 and base_name in OYUN_KURALLARI and not is_king_game:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
                                 stats["cezalar"][base_name] += int(score/birim)
                 except: continue
 
+        # --- MAÇ SONU HESAPLAMALARI ---
         if first_cell == "TOPLAM":
             current_match_data["toplamlar"] = row
             match_history.append(current_match_data)
             
+            # ELO Hazırlığı
             match_elos = {p: elo_ratings.get(p, STARTING_ELO) for p in current_players}
             match_scores = {} 
             
-            # Kazananları ve Kaybedenleri Belirle
+            # Kazanma/Kaybetme Durumu
             winners_count = 0
             losers_count = 0
             
@@ -353,7 +394,7 @@ def istatistikleri_hesapla():
                 if is_king_game:
                     if p_name == king_winner_name: is_win = True
                 else:
-                    if mac_puani >= 0: is_win = True
+                    if mac_puani >= 0: is_win = True # 0 alan da kazanır
                 
                 if is_win: winners_count += 1
                 else: losers_count += 1
@@ -369,6 +410,7 @@ def istatistikleri_hesapla():
                     if mac_puani > stats["rekor_max"]: stats["rekor_max"] = mac_puani
                     if mac_puani < stats["rekor_min"]: stats["rekor_min"] = mac_puani
                 
+                # Partner Analizi
                 others = [op for op in current_players if op != p_name]
                 for op in others:
                     if op not in stats["partnerler"]:
@@ -379,30 +421,30 @@ def istatistikleri_hesapla():
                     if is_win: p_stat["beraber_kazanma"] += 1
                     else: p_stat["beraber_kaybetme"] += 1
 
-            # ELO Hesaplama (High Stakes)
+            # ELO (KKD) HESABI - HIGH STAKES
             new_elo_values = {}
             for p_name in current_players:
                 my_current_elo = match_elos[p_name]
-                actual_score = match_scores[p_name] # 1 (Win) veya 0 (Loss)
+                actual_score = match_scores[p_name] # 1 veya 0
                 
+                # Rakiplerin ortalama ELO'su
                 opponents = [match_elos[op] for op in current_players if op != p_name]
                 if opponents: avg_opponent_elo = sum(opponents) / len(opponents)
                 else: avg_opponent_elo = STARTING_ELO 
                 
+                # Beklenti ve Değişim
                 expected_score = calculate_expected_score(my_current_elo, avg_opponent_elo)
                 change = K_FACTOR * (actual_score - expected_score)
                 
-                # --- ÇARPAN MANTIĞI (SOLO WIN / SOLO LOSS) ---
+                # --- ÖZEL ÇARPANLAR (SOLO WIN / SOLO LOSS) ---
                 if actual_score == 1 and winners_count == 1:
-                    # Tek başına çıkan (Kahraman)
-                    change = change * SOLO_MULTIPLIER
+                    change = change * SOLO_MULTIPLIER # Kahraman Bonusu
                 elif actual_score == 0 and losers_count == 1:
-                    # Tek başına batan (Şamar Oğlanı)
-                    # Change zaten negatif, 1.5 ile çarpınca daha büyük ceza olur
-                    change = change * SOLO_MULTIPLIER
+                    change = change * SOLO_MULTIPLIER # Şamar Oğlanı Cezası
                 
                 new_elo_values[p_name] = my_current_elo + change
             
+            # ELO'ları kaydet
             for p_name, val in new_elo_values.items():
                 elo_ratings[p_name] = val
                 player_stats[p_name]["kkd"] = val 
@@ -512,7 +554,6 @@ def game_interface():
             if st.button("💾 Maçı Arşivle ve KKD Güncelle", type="primary"):
                 with st.spinner("Maç kaydediliyor ve puanlar hesaplanıyor..."):
                     try:
-                        # 1. MAÇI KAYDET
                         wb = get_sheet_by_url()
                         sheet = wb.worksheet("Maclar")
                         tarih = st.session_state["match_date"]
@@ -530,8 +571,8 @@ def game_interface():
                         sheet.append_row(total_row)
                         sheet.append_row(["----------------------------------------"] * 5)
                         
-                        # 2. KKD HESAPLA VE SENKRONİZE ET (OTOMATİK)
-                        stats, _ = istatistikleri_hesapla() # Güncel veriyi çek
+                        # KKD GÜNCELLEME
+                        stats, _ = istatistikleri_hesapla()
                         if stats:
                             elo_dict = {name: data['kkd'] for name, data in stats.items()}
                             save_elos_to_users_sheet(elo_dict)
@@ -621,30 +662,26 @@ def game_interface():
                 st.rerun()
 
 # =============================================================================
-# 6. YENİ: KKD LİDERLİK TABLOSU (SADELEŞTİRİLDİ)
+# 5. KKD LİDERLİK TABLOSU
 # =============================================================================
 
 def kkd_leaderboard_interface():
     st.markdown("<h2>🏆 KKD Liderlik Tablosu</h2>", unsafe_allow_html=True)
-    
     stats, _ = istatistikleri_hesapla()
-    
     if not stats:
         st.warning("Henüz maç verisi yok.")
         return
 
     df_stats = pd.DataFrame.from_dict(stats, orient='index')
-    
     if not df_stats.empty:
         df_stats['win_rate'] = (df_stats['pozitif_mac_sayisi'] / df_stats['mac_sayisi']) * 100
         elo_table = df_stats[['mac_sayisi', 'kkd', 'win_rate']].sort_values('kkd', ascending=False)
         elo_table.columns = ['Toplam Maç', 'KKD Puanı (ELO)', 'Başarı Oranı (%)']
-        
         st.dataframe(elo_table.style.format({'Başarı Oranı (%)': "{:.1f}%", 'KKD Puanı (ELO)': "{:.0f}"}), use_container_width=True)
-        st.info("Puanlar maç bitiminde otomatik olarak güncellenir ve kaydedilir.")
+        st.info("Puanlar maç bitiminde otomatik güncellenir. Tek çıkan x1.5 ödül, tek batan x1.5 ceza alır.")
 
 # =============================================================================
-# 6. İSTATİSTİK ARAYÜZÜ (KKD ÇIKARILDI)
+# 6. İSTATİSTİK ARAYÜZÜ
 # =============================================================================
 
 def stats_interface():
@@ -663,8 +700,6 @@ def stats_interface():
             st.write("**Genel Puan Sıralaması**")
             st.dataframe(df_stats[['mac_sayisi', 'toplam_puan']].sort_values('toplam_puan', ascending=False), use_container_width=True)
             st.divider()
-            
-            st.subheader("🏔️ Zirveler ve Dipler (King Etkilemez)")
             col_rec1, col_rec2 = st.columns(2)
             max_puan = df_stats['rekor_max'].max()
             max_player = df_stats['rekor_max'].idxmax()
@@ -717,6 +752,33 @@ def stats_interface():
             st.info("Komandit verisi için maç yapmalısın.")
 
 # =============================================================================
+# 7. PROFİL EKRANI
+# =============================================================================
+
+def profile_interface():
+    st.markdown(f"<h2>👤 Profil: {st.session_state['username']}</h2>", unsafe_allow_html=True)
+    with st.expander("✏️ Kullanıcı Adı / Şifre Değiştir"):
+        st.warning("Dikkat: Kullanıcı adınızı değiştirirseniz, eski istatistikleriniz yeni isme aktarılmaz.")
+        new_username = st.text_input("Yeni Kullanıcı Adı", value=st.session_state["username"])
+        new_pass = st.text_input("Yeni Şifre", type="password")
+        if st.button("Bilgileri Güncelle"):
+            result = update_user_in_sheet(st.session_state["username"], new_username, new_pass if new_pass else "1234", st.session_state["role"])
+            if result == "updated":
+                st.success("Profil güncellendi! Girişe yönlendiriliyorsunuz...")
+                st.session_state["logged_in"] = False
+                st.rerun()
+
+    stats, _ = istatistikleri_hesapla()
+    my_name = st.session_state['username']
+    if stats and my_name in stats:
+        my_stats = stats[my_name]
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Toplam Maç", my_stats['mac_sayisi'])
+        c2.metric("KKD Puanı", f"{my_stats['kkd']:.0f}")
+        win_rate = (my_stats['pozitif_mac_sayisi'] / my_stats['mac_sayisi']) * 100 if my_stats['mac_sayisi'] > 0 else 0
+        c3.metric("Başarı %", f"%{win_rate:.1f}")
+
+# =============================================================================
 # 8. YÖNETİM PANELİ
 # =============================================================================
 
@@ -725,7 +787,6 @@ def admin_panel():
     users_df = get_users_from_sheet()
     current_user_role = st.session_state["role"]
     
-    # 1. KULLANICI EKLEME / GÜNCELLEME
     with st.form("user_add_update"):
         st.subheader("Kullanıcı Ekle / Güncelle")
         c1, c2, c3 = st.columns(3)
@@ -755,7 +816,6 @@ def admin_panel():
 
     st.divider()
     
-    # 2. MAÇ YÖNETİMİ
     st.subheader("🗑️ Maç Yönetimi")
     _, match_history = istatistikleri_hesapla()
     
@@ -785,9 +845,7 @@ def admin_panel():
 
     st.divider()
 
-    # 3. KULLANICI LİSTESİ VE SİLME
     st.subheader("📋 Kullanıcı Listesi")
-    
     if "pending_delete_user" in st.session_state and st.session_state["pending_delete_user"]:
         target = st.session_state["pending_delete_user"]
         st.error(f"⚠️ **{target}** kullanıcısını silmek üzeresiniz!")
@@ -816,7 +874,7 @@ def admin_panel():
                             st.rerun()
 
 # =============================================================================
-# 9. ANA UYGULAMA ÇATISI (GÜNCELLENDİ: YATAY MENÜ)
+# 9. ANA UYGULAMA ÇATISI
 # =============================================================================
 
 st.set_page_config(page_title="King İstatistik Kurumu", layout="wide", page_icon="👑")
@@ -843,6 +901,7 @@ else:
     
     st.markdown("---")
 
+    # Routing
     if selected_page == "🎮 Oyun Ekle": game_interface()
     elif selected_page == "📊 İstatistikler": stats_interface()
     elif selected_page == "🏆 KKD Liderlik": kkd_leaderboard_interface() 
