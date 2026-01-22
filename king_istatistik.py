@@ -9,6 +9,13 @@ import time
 import math
 import uuid
 
+# Matplotlib kontrolü (Hata vermemesi için)
+try:
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+
 # =============================================================================
 # 🚨 SABİT AYARLAR VE LİNKLER
 # =============================================================================
@@ -36,6 +43,18 @@ FUNNY_TITLES = {
     "Son İki": "🛑 Son Durak",
     "Koz (Tümü)": "♠️ Koz Baronu" 
 }
+
+# King Oyun Kuralları
+OYUN_KURALLARI = {
+    "Rıfkı":        {"puan": -320, "adet": 1,  "limit": 2}, 
+    "Kız Almaz":    {"puan": -100, "adet": 4,  "limit": 2},
+    "Erkek Almaz":  {"puan": -60,  "adet": 8,  "limit": 2},
+    "Kupa Almaz":   {"puan": -30,  "adet": 13, "limit": 2},
+    "El Almaz":     {"puan": -50,  "adet": 13, "limit": 2},
+    "Son İki":      {"puan": -180, "adet": 2,  "limit": 2},
+    "Koz (Tümü)":   {"puan": 50,   "adet": 104,"limit": 1}
+}
+OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 # =============================================================================
 # 0. GÖRSEL AYARLAR VE CSS
@@ -69,18 +88,6 @@ def inject_custom_css():
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
     </style>
     """, unsafe_allow_html=True)
-
-# King Oyun Kuralları
-OYUN_KURALLARI = {
-    "Rıfkı":        {"puan": -320, "adet": 1,  "limit": 2}, 
-    "Kız Almaz":    {"puan": -100, "adet": 4,  "limit": 2},
-    "Erkek Almaz":  {"puan": -60,  "adet": 8,  "limit": 2},
-    "Kupa Almaz":   {"puan": -30,  "adet": 13, "limit": 2},
-    "El Almaz":     {"puan": -50,  "adet": 13, "limit": 2},
-    "Son İki":      {"puan": -180, "adet": 2,  "limit": 2},
-    "Koz (Tümü)":   {"puan": 50,   "adet": 104,"limit": 1}
-}
-OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 # =============================================================================
 # 1. GOOGLE SHEETS
@@ -152,6 +159,34 @@ def save_elos_to_users_sheet(elo_data):
         return True
     except: return False
 
+def update_match_history_names(old_name, new_name):
+    try:
+        wb = get_sheet_by_url()
+        sheet = wb.worksheet("Maclar")
+        all_values = sheet.get_all_values()
+        updated_data = []
+        is_changed = False
+        for row in all_values:
+            new_row = []
+            for cell in row:
+                cell_str = str(cell).strip()
+                if cell_str == old_name.strip():
+                    new_row.append(new_name)
+                    is_changed = True
+                elif "KING" in cell_str and f"({old_name})" in cell_str:
+                    new_cell = cell_str.replace(f"({old_name})", f"({new_name})")
+                    new_row.append(new_cell)
+                    is_changed = True
+                else:
+                    new_row.append(cell)
+            updated_data.append(new_row)
+        if is_changed:
+            sheet.clear()
+            sheet.update(updated_data)
+            return True
+        return False
+    except: return False
+
 def update_user_in_sheet(old_username, new_username, password, role, delete=False):
     try:
         wb = get_sheet_by_url()
@@ -193,34 +228,6 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         st.error(f"Kayıt Hatası: {e}")
         return False
 
-def update_match_history_names(old_name, new_name):
-    try:
-        wb = get_sheet_by_url()
-        sheet = wb.worksheet("Maclar")
-        all_values = sheet.get_all_values()
-        updated_data = []
-        is_changed = False
-        for row in all_values:
-            new_row = []
-            for cell in row:
-                cell_str = str(cell).strip()
-                if cell_str == old_name.strip():
-                    new_row.append(new_name)
-                    is_changed = True
-                elif "KING" in cell_str and f"({old_name})" in cell_str:
-                    new_cell = cell_str.replace(f"({old_name})", f"({new_name})")
-                    new_row.append(new_cell)
-                    is_changed = True
-                else:
-                    new_row.append(cell)
-            updated_data.append(new_row)
-        if is_changed:
-            sheet.clear()
-            sheet.update(updated_data)
-            return True
-        return False
-    except: return False
-
 def delete_match_from_sheet(match_title):
     try:
         wb = get_sheet_by_url()
@@ -242,7 +249,7 @@ def delete_match_from_sheet(match_title):
     except: return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU
+# 2. İSTATİSTİK MOTORU (DÜZELTİLDİ VE GARANTİLİ)
 # =============================================================================
 
 def calculate_expected_score(rating_a, rating_b):
@@ -264,6 +271,7 @@ def istatistikleri_hesapla():
 
     if not raw_data: return None, None, None
 
+    # Değişkenleri garanti başlat
     player_stats = {}
     elo_ratings = {} 
     all_matches_chronological = []
@@ -279,6 +287,7 @@ def istatistikleri_hesapla():
         if not row: continue
         first_cell = str(row[0])
         
+        # --- MAÇ BAŞLANGICI ---
         if first_cell.startswith("--- MAÇ:"):
             current_players = []
             current_match_data = {
@@ -292,6 +301,7 @@ def istatistikleri_hesapla():
             king_winner_name = None
             continue
             
+        # --- OYUNCU İSİMLERİ ---
         if first_cell == "OYUN TÜRÜ":
             for col_idx in range(1, len(row)):
                 p_name = row[col_idx].strip()
@@ -316,8 +326,11 @@ def istatistikleri_hesapla():
             try: king_winner_name = first_cell.split("(")[1].split(")")[0]
             except: king_winner_name = None 
         
+        # --- SKORLAR ---
         if (base_name in OYUN_KURALLARI or "KING" in first_cell) and current_players:
-            if "skorlar" in current_match_data: current_match_data["skorlar"].append(row)
+            if "skorlar" in current_match_data:
+                current_match_data["skorlar"].append(row)
+            
             for i, p_name in enumerate(current_players):
                 try:
                     if (i + 1) < len(row):
@@ -330,22 +343,25 @@ def istatistikleri_hesapla():
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
                             
-                            # Ceza Sayacı (ÖNEMLİ: Tablo için burası kritik)
+                            # Ceza Analizi
                             if score < 0 and base_name in OYUN_KURALLARI and not is_king_game:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
                                 count = int(score/birim)
                                 stats["cezalar"][base_name] += count
                                 
-                                if p_name not in current_match_data["ceza_detaylari"]:
-                                    current_match_data["ceza_detaylari"][p_name] = {}
-                                if base_name not in current_match_data["ceza_detaylari"][p_name]:
-                                    current_match_data["ceza_detaylari"][p_name][base_name] = 0
-                                current_match_data["ceza_detaylari"][p_name][base_name] += count
+                                if "ceza_detaylari" in current_match_data:
+                                    if p_name not in current_match_data["ceza_detaylari"]:
+                                        current_match_data["ceza_detaylari"][p_name] = {}
+                                    if base_name not in current_match_data["ceza_detaylari"][p_name]:
+                                        current_match_data["ceza_detaylari"][p_name][base_name] = 0
+                                    current_match_data["ceza_detaylari"][p_name][base_name] += count
                 except: continue
 
+        # --- MAÇ SONU ---
         if first_cell == "TOPLAM":
-            if not current_match_data: continue
+            if not current_match_data: continue # Header yoksa atla
+            
             current_match_data["toplamlar"] = row
             match_elos = {p: elo_ratings.get(p, STARTING_ELO) for p in current_players}
             match_results = {}
@@ -363,7 +379,6 @@ def istatistikleri_hesapla():
                     
                     if is_win: winners_count += 1
                     else: losers_count += 1
-                    match_scores[p_name] = 1 if is_win else 0
                     
                     stats = player_stats[p_name]
                     stats["mac_sayisi"] += 1
@@ -408,6 +423,7 @@ def istatistikleri_hesapla():
             for p in player_stats: player_stats[p]["gecici_mac_puani"] = 0
             current_players = []
 
+    # Streak Hesabı
     all_matches_chronological.sort(key=lambda x: x['tarih'])
     temp_streaks = {}
     for match in all_matches_chronological:
@@ -415,7 +431,9 @@ def istatistikleri_hesapla():
             if p_name not in temp_streaks: temp_streaks[p_name] = {'win': 0, 'loss': 0}
             score = match['sonuclar'].get(p_name, -1)
             is_win = score >= 0
-            if "KING" in match['baslik'] and "KING" in match['toplamlar'][0]:
+            
+            # King özel durumu
+            if "KING" in match.get("baslik", "") and "KING" in match.get("toplamlar", [""])[0]:
                  try:
                      winner = match['toplamlar'][0].split("(")[1].split(")")[0]
                      is_win = (p_name == winner)
@@ -581,7 +599,7 @@ def kkd_leaderboard_interface():
         st.dataframe(elo_table.style.format({'Başarı %': "{:.1f}%", 'KKD Puanı': "{:.0f}"}), use_container_width=True)
 
 # =============================================================================
-# 6. İSTATİSTİK ARAYÜZÜ (REWIND & STREAK)
+# 6. İSTATİSTİK ARAYÜZÜ
 # =============================================================================
 
 def stats_interface():
@@ -592,7 +610,6 @@ def stats_interface():
     tabs = st.tabs(["🔥 Seriler (Streak)", "📅 Rewind (Özet)", "🏆 Genel", "📜 Arşiv", "🚫 Cezalar", "🤝 Komandit"])
     df_stats = pd.DataFrame.from_dict(stats, orient='index')
 
-    # 1. SERİLER
     with tabs[0]:
         st.subheader("🔥 Galibiyet ve Mağlubiyet Serileri")
         st.caption("Maç tarihine göre hesaplanır.")
@@ -696,12 +713,9 @@ def stats_interface():
                 st.dataframe(pd.DataFrame(rows, columns=cols), use_container_width=True)
     with tabs[4]:
         st.subheader("🚫 Ceza Analizi")
-        # 1. Veriyi Hazırla (Matris: Oyuncular x Cezalar)
         ceza_records = []
         for p_name, p_data in stats.items():
-            # Oyuncunun ceza sözlüğünü al
             row = p_data['cezalar'].copy()
-            # Eksik cezaları 0 ile doldur
             for k in OYUN_KURALLARI.keys():
                 if k not in row: row[k] = 0
             row['Oyuncu'] = p_name
@@ -710,20 +724,15 @@ def stats_interface():
         if ceza_records:
             df_ceza = pd.DataFrame(ceza_records)
             df_ceza.set_index('Oyuncu', inplace=True)
-            
-            # 2. Tabloyu Göster (Isı haritası gibi renklendir)
             st.write("### 🟥 Kim Ne Kadar Yedi?")
-            st.dataframe(df_ceza.style.background_gradient(cmap="Reds"), use_container_width=True)
-            
-            st.divider()
-            
-            # 3. Grafik Seçeneği (Opsiyonel olarak altta kalsın)
-            st.write("### 📊 Grafiksel Gösterim")
-            ceza_turu = st.selectbox("Grafikte Gösterilecek Ceza:", list(OYUN_KURALLARI.keys()))
-            chart_data = df_ceza[ceza_turu]
-            st.bar_chart(chart_data)
-        else:
-            st.warning("Henüz ceza verisi yok.")
+            if HAS_MATPLOTLIB:
+                try:
+                    st.dataframe(df_ceza.style.background_gradient(cmap="Reds"), use_container_width=True)
+                except:
+                    st.dataframe(df_ceza, use_container_width=True)
+            else:
+                st.dataframe(df_ceza, use_container_width=True)
+        else: st.warning("Veri yok.")
 
     with tabs[5]:
         st.subheader("🤝 Komanditlik")
@@ -844,7 +853,7 @@ def admin_panel():
                     st.rerun()
 
 # =============================================================================
-# 9. ANA UYGULAMA
+# 9. ANA UYGULAMA (EN SONA ALINDI - HATA ÖNLEMEK İÇİN)
 # =============================================================================
 
 st.set_page_config(page_title="King İstatistik Kurumu", layout="wide", page_icon="👑")
