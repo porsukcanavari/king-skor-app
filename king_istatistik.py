@@ -9,7 +9,7 @@ import time
 import math
 import uuid
 
-# Matplotlib kontrolü (Hata vermemesi için)
+# Matplotlib kontrolü
 try:
     import matplotlib.pyplot as plt
     HAS_MATPLOTLIB = True
@@ -249,7 +249,7 @@ def delete_match_from_sheet(match_title):
     except: return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (DÜZELTİLDİ VE GARANTİLİ)
+# 2. İSTATİSTİK MOTORU (ORTALAMA CEZA/KOZ EKLENDİ)
 # =============================================================================
 
 def calculate_expected_score(rating_a, rating_b):
@@ -315,7 +315,9 @@ def istatistikleri_hesapla():
                             "rekor_max": -9999, "rekor_min": 9999,
                             "kkd": STARTING_ELO,
                             "win_streak": 0, "loss_streak": 0,
-                            "max_win_streak": 0, "max_loss_streak": 0
+                            "max_win_streak": 0, "max_loss_streak": 0,
+                            "toplam_ceza_puani": 0, # YENİ: Toplam ceza puanı (Negatiflerin toplamı)
+                            "toplam_koz_puani": 0   # YENİ: Toplam koz puanı (Pozitif kozların toplamı)
                         }
                     if p_name not in elo_ratings: elo_ratings[p_name] = STARTING_ELO
             continue
@@ -343,7 +345,13 @@ def istatistikleri_hesapla():
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
                             
-                            # Ceza Analizi
+                            # CEZA VE KOZ PUANI HESAPLAMA (YENİ)
+                            if "Koz" in base_name:
+                                stats["toplam_koz_puani"] += score
+                            elif score < 0 and not is_king_game:
+                                stats["toplam_ceza_puani"] += score
+
+                            # Ceza Sayacı (Adet)
                             if score < 0 and base_name in OYUN_KURALLARI and not is_king_game:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
@@ -360,7 +368,7 @@ def istatistikleri_hesapla():
 
         # --- MAÇ SONU ---
         if first_cell == "TOPLAM":
-            if not current_match_data: continue # Header yoksa atla
+            if not current_match_data: continue 
             
             current_match_data["toplamlar"] = row
             match_elos = {p: elo_ratings.get(p, STARTING_ELO) for p in current_players}
@@ -379,6 +387,7 @@ def istatistikleri_hesapla():
                     
                     if is_win: winners_count += 1
                     else: losers_count += 1
+                    match_scores[p_name] = 1 if is_win else 0
                     
                     stats = player_stats[p_name]
                     stats["mac_sayisi"] += 1
@@ -432,7 +441,6 @@ def istatistikleri_hesapla():
             score = match['sonuclar'].get(p_name, -1)
             is_win = score >= 0
             
-            # King özel durumu
             if "KING" in match.get("baslik", "") and "KING" in match.get("toplamlar", [""])[0]:
                  try:
                      winner = match['toplamlar'][0].split("(")[1].split(")")[0]
@@ -599,7 +607,7 @@ def kkd_leaderboard_interface():
         st.dataframe(elo_table.style.format({'Başarı %': "{:.1f}%", 'KKD Puanı': "{:.0f}"}), use_container_width=True)
 
 # =============================================================================
-# 6. İSTATİSTİK ARAYÜZÜ
+# 6. İSTATİSTİK ARAYÜZÜ (REWIND & STREAK)
 # =============================================================================
 
 def stats_interface():
@@ -607,12 +615,12 @@ def stats_interface():
     stats, match_history, chronological_matches = istatistikleri_hesapla()
     if not stats: st.warning("Henüz tamamlanmış maç verisi yok."); return
 
-    tabs = st.tabs(["🔥 Seriler (Streak)", "📅 Rewind (Özet)", "🏆 Genel", "📜 Arşiv", "🚫 Cezalar", "🤝 Komandit"])
+    tabs = st.tabs(["🔥 Seriler", "⚖️ Averaj", "📅 Rewind", "🏆 Genel", "📜 Arşiv", "🚫 Cezalar", "🤝 Komandit"])
     df_stats = pd.DataFrame.from_dict(stats, orient='index')
 
+    # 1. SERİLER
     with tabs[0]:
         st.subheader("🔥 Galibiyet ve Mağlubiyet Serileri")
-        st.caption("Maç tarihine göre hesaplanır.")
         best_streaker = df_stats['max_win_streak'].idxmax()
         worst_streaker = df_stats['max_loss_streak'].idxmax()
         c1, c2 = st.columns(2)
@@ -620,7 +628,14 @@ def stats_interface():
         c2.error(f"💀 **En Uzun Mağlubiyet:**\n\n# {worst_streaker} ({df_stats['max_loss_streak'].max()} Maç)")
         st.dataframe(df_stats[['win_streak', 'max_win_streak', 'loss_streak', 'max_loss_streak']].sort_values('win_streak', ascending=False), use_container_width=True)
 
+    # 2. AVERAJ (YENİ SEKME)
     with tabs[1]:
+        st.subheader("⚖️ Averaj Liderlik (Ort. Puan)")
+        df_stats['averaj'] = df_stats['toplam_puan'] / df_stats['mac_sayisi']
+        st.dataframe(df_stats[['mac_sayisi', 'toplam_puan', 'averaj']].sort_values('averaj', ascending=False).style.format({'averaj': "{:.1f}"}), use_container_width=True)
+
+    # 3. REWIND
+    with tabs[2]:
         st.subheader("📅 Zaman Tüneli")
         if not chronological_matches: st.info("Tarih verisi yok."); return
         all_dates = sorted([m['tarih'] for m in chronological_matches], reverse=True)
@@ -697,11 +712,11 @@ def stats_interface():
 
         else: st.warning("Maç yok.")
 
-    with tabs[2]:
+    with tabs[3]:
         st.subheader("🏆 Genel")
         if not df_stats.empty:
             st.dataframe(df_stats[['mac_sayisi', 'toplam_puan']].sort_values('toplam_puan', ascending=False), use_container_width=True)
-    with tabs[3]:
+    with tabs[4]:
         st.subheader("📜 Arşiv")
         if match_history:
             selected_match = st.selectbox("Maç Seç:", [f"{m['baslik']}" for m in match_history][::-1])
@@ -711,30 +726,43 @@ def stats_interface():
                 rows = [s[:len(cols)] for s in selected_data["skorlar"]]
                 rows.append(selected_data["toplamlar"][:len(cols)])
                 st.dataframe(pd.DataFrame(rows, columns=cols), use_container_width=True)
-    with tabs[4]:
+    with tabs[5]:
         st.subheader("🚫 Ceza Analizi")
         ceza_records = []
         for p_name, p_data in stats.items():
             row = p_data['cezalar'].copy()
             for k in OYUN_KURALLARI.keys():
                 if k not in row: row[k] = 0
-            row['Oyuncu'] = p_name
-            ceza_records.append(row)
+            
+            formatted_row = {}
+            for k, v in row.items():
+                mac_sayisi = p_data['mac_sayisi']
+                oran = v / mac_sayisi if mac_sayisi > 0 else 0
+                formatted_row[k] = f"{v} ({oran:.1f})"
+            
+            formatted_row['Oyuncu'] = p_name
+            ceza_records.append(formatted_row)
         
         if ceza_records:
             df_ceza = pd.DataFrame(ceza_records)
             df_ceza.set_index('Oyuncu', inplace=True)
-            st.write("### 🟥 Kim Ne Kadar Yedi?")
-            if HAS_MATPLOTLIB:
-                try:
-                    st.dataframe(df_ceza.style.background_gradient(cmap="Reds"), use_container_width=True)
-                except:
-                    st.dataframe(df_ceza, use_container_width=True)
-            else:
-                st.dataframe(df_ceza, use_container_width=True)
+            st.write("### 🟥 Kim Ne Kadar Yedi? (Toplam & Ort)")
+            st.dataframe(df_ceza, use_container_width=True)
+            
+            st.write("### 💸 Puan Kaybı Dağılımı")
+            puan_loss_data = {}
+            for p_name, p_data in stats.items():
+                puan_loss_data[p_name] = {}
+                for c_type, count in p_data['cezalar'].items():
+                    if c_type in OYUN_KURALLARI:
+                        puan_degeri = abs(OYUN_KURALLARI[c_type]['puan'])
+                        puan_loss_data[p_name][c_type] = count * puan_degeri
+            
+            df_loss = pd.DataFrame(puan_loss_data).T
+            st.bar_chart(df_loss)
         else: st.warning("Veri yok.")
 
-    with tabs[5]:
+    with tabs[6]:
         st.subheader("🤝 Komanditlik")
         me = st.session_state["username"]
         if me in stats and stats[me]['partnerler']:
@@ -752,25 +780,28 @@ def profile_interface():
     
     if stats and my_name in stats:
         my_stats = stats[my_name]
-        cezalar = my_stats['cezalar']
-        fav_ceza = "Temiz"; fav_oran = 0
-        if cezalar:
-            fav_ceza = max(cezalar, key=cezalar.get)
-            toplam_ceza = sum(cezalar.values())
-            fav_oran = (cezalar[fav_ceza] / toplam_ceza * 100) if toplam_ceza > 0 else 0
-
+        
+        # Yeni Metrikler
+        avg_ceza = my_stats['toplam_ceza_puani'] / my_stats['mac_sayisi'] if my_stats['mac_sayisi'] > 0 else 0
+        avg_koz = my_stats['toplam_koz_puani'] / my_stats['mac_sayisi'] if my_stats['mac_sayisi'] > 0 else 0
         win_rate = (my_stats['pozitif_mac_sayisi'] / my_stats['mac_sayisi']) * 100 if my_stats['mac_sayisi'] > 0 else 0
         
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3 = st.columns(3)
         c1.metric("Toplam Maç", my_stats['mac_sayisi'])
         c2.metric("KKD (ELO)", f"{my_stats['kkd']:.0f}")
         c3.metric("Win Rate", f"%{win_rate:.1f}")
-        c4.metric("Baş Belası", f"{fav_ceza}", f"%{fav_oran:.0f}")
+        
+        c4, c5 = st.columns(2)
+        c4.metric("Ort. Ceza Puanı", f"{avg_ceza:.1f}")
+        c5.metric("Ort. Koz Puanı", f"{avg_koz:.1f}")
         
         st.divider()
         st.subheader("🎓 Akıllı Koç Analizi")
+        cezalar = my_stats['cezalar']
+        fav_ceza = max(cezalar, key=cezalar.get) if cezalar else "Temiz"
+        
         if fav_ceza in VIDEO_MAP:
-            st.info(f"Koç diyor ki: **{fav_ceza}** cezasını çok yiyorsun (%{fav_oran:.0f}). Bu konuda zayıfsın, şu dersi izle:")
+            st.info(f"Koç diyor ki: **{fav_ceza}** cezasını çok yiyorsun. Şu dersi izle:")
             st.link_button(label="📺 Videoyu YouTube'da İzlemek İçin Tıkla", url=VIDEO_MAP[fav_ceza])
         else: st.success("Harika! Belirgin bir zayıflığın yok.")
             
@@ -853,7 +884,7 @@ def admin_panel():
                     st.rerun()
 
 # =============================================================================
-# 9. ANA UYGULAMA (EN SONA ALINDI - HATA ÖNLEMEK İÇİN)
+# 9. ANA UYGULAMA
 # =============================================================================
 
 st.set_page_config(page_title="King İstatistik Kurumu", layout="wide", page_icon="👑")
