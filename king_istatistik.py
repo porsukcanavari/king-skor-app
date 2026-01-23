@@ -6,9 +6,6 @@ from datetime import datetime, timedelta
 import re
 import time
 from collections import defaultdict
-import plotly.graph_objects as go
-import plotly.express as px
-from streamlit_tags import st_tags
 
 # =============================================================================
 # 🚨 SABİT AYARLAR VE LİNKLER
@@ -115,7 +112,7 @@ def inject_custom_css():
             color: white !important; 
             font-weight: bold !important; 
             font-size: 16px !important; 
-            padding: 8px 20px !important;
+            padding: 8px 20px !important; 
             background: rgba(255, 255, 255, 0.1);
             border-radius: 8px;
             margin: 0 5px;
@@ -129,9 +126,9 @@ def inject_custom_css():
         
         div[data-testid="stMetric"] { 
             background: linear-gradient(135deg, #262730 0%, #363740 100%);
-            padding: 20px 15px !important;
-            border-radius: 15px;
-            border: 2px solid #444;
+            padding: 20px 15px !important; 
+            border-radius: 15px; 
+            border: 2px solid #444; 
             box-shadow: 0 6px 10px rgba(0,0,0,0.4);
         }
         
@@ -154,7 +151,7 @@ def inject_custom_css():
         }
         
         .stAlert { 
-            border-radius: 10px !important;
+            border-radius: 10px !important; 
             border: 2px solid !important;
         }
         
@@ -768,6 +765,7 @@ def istatistikleri_hesapla():
     streak_tracker = {uid: {'current_win': 0, 'current_loss': 0} for uid in id_to_name.keys()}
     
     for match in all_matches_chronological:
+        # Sadece bu maçta oynayanların streak'ini güncelle
         for p_id in match.get('ids', []):
             if p_id not in player_stats:
                 continue
@@ -1409,24 +1407,7 @@ def stats_interface():
         top_avg = df_main.sort_values('averaj', ascending=False).head(10)
         
         # Grafik
-        fig = go.Figure(data=[
-            go.Bar(
-                x=top_avg.index,
-                y=top_avg['averaj'],
-                text=top_avg['averaj'].round(1),
-                textposition='auto',
-                marker_color=['#FFD700', '#C0C0C0', '#CD7F32'] + ['#28a745'] * 7
-            )
-        ])
-        
-        fig.update_layout(
-            title="En Yüksek Ortalamaya Sahip Oyuncular",
-            xaxis_title="Oyuncu",
-            yaxis_title="Ortalama Puan",
-            template="plotly_dark"
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+        st.bar_chart(top_avg['averaj'])
         
         # Detaylı tablo
         disp = df_main[['mac_sayisi', 'toplam_puan', 'averaj', 'win_rate']].sort_values('averaj', ascending=False)
@@ -1455,7 +1436,7 @@ def stats_interface():
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            selected_year = st.selectbox("Yıl Seç", ["Tümü"] + years)
+            selected_year = st.selectbox("Yıl Seç", ["Tüm Zamanlar"] + years)
         with col2:
             selected_month = st.selectbox("Ay Seç", ["Tümü"] + months)
         with col3:
@@ -1467,7 +1448,7 @@ def stats_interface():
             d = m['tarih']
             
             # Yıl filtresi
-            if selected_year != "Tümü" and d.year != selected_year:
+            if selected_year != "Tüm Zamanlar" and d.year != selected_year:
                 continue
             
             # Ay filtresi
@@ -1568,20 +1549,8 @@ def stats_interface():
                     all_penalties[ceza_type] += count
             
             if all_penalties:
-                # Pie chart
-                fig = go.Figure(data=[go.Pie(
-                    labels=list(all_penalties.keys()),
-                    values=list(all_penalties.values()),
-                    hole=.3,
-                    marker_colors=[OYUN_KURALLARI.get(k, {}).get('renk', '#FF0000') for k in all_penalties.keys()]
-                )])
-                
-                fig.update_layout(
-                    title="Ceza Türlerine Göre Dağılım",
-                    template="plotly_dark"
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
+                # Bar chart for penalties
+                st.bar_chart(pd.Series(all_penalties))
             
             # Detaylı tablo
             st.subheader("📊 Dönemsel Performans")
@@ -1692,7 +1661,7 @@ def stats_interface():
         st.subheader("📈 Tüm İstatistikler")
         
         display_cols = ['mac_sayisi', 'pozitif_mac_sayisi', 'toplam_puan', 'kkd', 
-                       'averaj', 'win_streak', 'king_kazanma']
+                        'averaj', 'win_streak', 'king_kazanma']
         
         display_df = df_main[display_cols].copy()
         display_df.columns = ['Maç', 'Kazanma', 'Toplam Puan', 'KKD', 
@@ -1722,7 +1691,7 @@ def stats_interface():
         
         # Maç seçimi
         match_titles = [m['baslik'].replace("--- MAÇ: ", "").replace(" ---", "") 
-                       for m in match_hist[::-1]]
+                        for m in match_hist[::-1]]
         
         selected_match = st.selectbox("Maç Seçin:", match_titles)
         
@@ -1873,24 +1842,7 @@ def stats_interface():
             
             if penalty_counts:
                 # Bar chart
-                fig = go.Figure(data=[
-                    go.Bar(
-                        x=penalty_types,
-                        y=penalty_counts,
-                        marker_color=colors,
-                        text=penalty_counts,
-                        textposition='auto'
-                    )
-                ])
-                
-                fig.update_layout(
-                    title="Ceza Türlerine Göre Toplam Dağılım",
-                    xaxis_title="Ceza Türü",
-                    yaxis_title="Toplam Sayı",
-                    template="plotly_dark"
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
+                st.bar_chart(pd.Series(penalty_counts, index=penalty_types))
             
             # Detaylı tablo
             st.subheader("📋 Detaylı Ceza Karnesi")
@@ -1957,24 +1909,7 @@ def stats_interface():
                 )
                 
                 # Partner grafiği
-                fig = go.Figure(data=[
-                    go.Bar(
-                        x=partner_df['Partner'],
-                        y=partner_df['Win Rate %'],
-                        text=partner_df['Win Rate %'].round(1).astype(str) + '%',
-                        textposition='auto',
-                        marker_color=['#FFD700', '#C0C0C0', '#CD7F32'] + ['#28a745'] * (len(partner_df) - 3)
-                    )
-                ])
-                
-                fig.update_layout(
-                    title="Partnerlere Göre Win Rate",
-                    xaxis_title="Partner",
-                    yaxis_title="Win Rate %",
-                    template="plotly_dark"
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
+                st.bar_chart(partner_df.set_index('Partner')['Win Rate %'])
             else:
                 st.info("Henüz partner verisi bulunmuyor.")
         else:
@@ -2037,24 +1972,7 @@ def profile_interface():
             # Form grafiği
             scores = [m['puan'] for m in s['son_5_mac'][-5:]]
             if scores:
-                fig = go.Figure(data=[
-                    go.Scatter(
-                        x=list(range(1, len(scores) + 1)),
-                        y=scores,
-                        mode='lines+markers',
-                        line=dict(color='#FFD700', width=3),
-                        marker=dict(size=10, color=['#28a745' if s >= 0 else '#dc3545' for s in scores])
-                    )
-                ])
-                
-                fig.update_layout(
-                    title="Son 5 Maç Form Grafiği",
-                    xaxis_title="Maç",
-                    yaxis_title="Puan",
-                    template="plotly_dark"
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
+                st.line_chart(scores)
         
         # Aylık performans
         st.subheader("📅 Aylık Performans")
@@ -2107,8 +2025,7 @@ def profile_interface():
                 """)
             elif s['win_streak'] >= 3:
                 st.success("""
-                **🔥 Harika Gidiyorsunuz!** 
-                {s['win_streak']} maçlık kazanma seriniz var. 
+                **🔥 Harika Gidiyorsunuz!** {s['win_streak']} maçlık kazanma seriniz var. 
                 Bu formu koruyun!
                 """)
     
