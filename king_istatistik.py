@@ -9,7 +9,7 @@ import time
 import math
 import uuid
 
-# Matplotlib kontrolü
+# Matplotlib kontrolü (Hata önleyici)
 try:
     import matplotlib.pyplot as plt
     HAS_MATPLOTLIB = True
@@ -26,7 +26,7 @@ STARTING_ELO = 1000
 K_FACTOR = 32
 SOLO_MULTIPLIER = 1.5
 
-# YOUTUBE OYNATMA LİSTESİ
+# YOUTUBE
 PLAYLIST_LINK = "https://www.youtube.com/playlist?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA"
 VIDEO_MAP = {
     "Rıfkı": PLAYLIST_LINK, "Kız Almaz": PLAYLIST_LINK, "Erkek Almaz": PLAYLIST_LINK,
@@ -44,7 +44,7 @@ FUNNY_TITLES = {
     "Koz (Tümü)": "♠️ Koz Baronu" 
 }
 
-# King Oyun Kuralları
+# OYUN KURALLARI
 OYUN_KURALLARI = {
     "Rıfkı":        {"puan": -320, "adet": 1,  "limit": 2}, 
     "Kız Almaz":    {"puan": -100, "adet": 4,  "limit": 2},
@@ -249,7 +249,7 @@ def delete_match_from_sheet(match_title):
     except: return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU (ORTALAMA CEZA/KOZ EKLENDİ)
+# 2. İSTATİSTİK MOTORU
 # =============================================================================
 
 def calculate_expected_score(rating_a, rating_b):
@@ -271,7 +271,6 @@ def istatistikleri_hesapla():
 
     if not raw_data: return None, None, None
 
-    # Değişkenleri garanti başlat
     player_stats = {}
     elo_ratings = {} 
     all_matches_chronological = []
@@ -287,7 +286,6 @@ def istatistikleri_hesapla():
         if not row: continue
         first_cell = str(row[0])
         
-        # --- MAÇ BAŞLANGICI ---
         if first_cell.startswith("--- MAÇ:"):
             current_players = []
             current_match_data = {
@@ -301,7 +299,6 @@ def istatistikleri_hesapla():
             king_winner_name = None
             continue
             
-        # --- OYUNCU İSİMLERİ ---
         if first_cell == "OYUN TÜRÜ":
             for col_idx in range(1, len(row)):
                 p_name = row[col_idx].strip()
@@ -316,8 +313,8 @@ def istatistikleri_hesapla():
                             "kkd": STARTING_ELO,
                             "win_streak": 0, "loss_streak": 0,
                             "max_win_streak": 0, "max_loss_streak": 0,
-                            "toplam_ceza_puani": 0, # YENİ: Toplam ceza puanı (Negatiflerin toplamı)
-                            "toplam_koz_puani": 0   # YENİ: Toplam koz puanı (Pozitif kozların toplamı)
+                            "toplam_ceza_puani": 0,
+                            "toplam_koz_puani": 0
                         }
                     if p_name not in elo_ratings: elo_ratings[p_name] = STARTING_ELO
             continue
@@ -328,7 +325,6 @@ def istatistikleri_hesapla():
             try: king_winner_name = first_cell.split("(")[1].split(")")[0]
             except: king_winner_name = None 
         
-        # --- SKORLAR ---
         if (base_name in OYUN_KURALLARI or "KING" in first_cell) and current_players:
             if "skorlar" in current_match_data:
                 current_match_data["skorlar"].append(row)
@@ -345,13 +341,9 @@ def istatistikleri_hesapla():
                             stats["toplam_puan"] += score
                             stats["gecici_mac_puani"] += score
                             
-                            # CEZA VE KOZ PUANI HESAPLAMA (YENİ)
-                            if "Koz" in base_name:
-                                stats["toplam_koz_puani"] += score
-                            elif score < 0 and not is_king_game:
-                                stats["toplam_ceza_puani"] += score
+                            if "Koz" in base_name: stats["toplam_koz_puani"] += score
+                            elif score < 0 and not is_king_game: stats["toplam_ceza_puani"] += score
 
-                            # Ceza Sayacı (Adet)
                             if score < 0 and base_name in OYUN_KURALLARI and not is_king_game:
                                 if base_name not in stats["cezalar"]: stats["cezalar"][base_name] = 0
                                 birim = OYUN_KURALLARI[base_name]['puan']
@@ -366,7 +358,6 @@ def istatistikleri_hesapla():
                                     current_match_data["ceza_detaylari"][p_name][base_name] += count
                 except: continue
 
-        # --- MAÇ SONU ---
         if first_cell == "TOPLAM":
             if not current_match_data: continue 
             
@@ -432,7 +423,6 @@ def istatistikleri_hesapla():
             for p in player_stats: player_stats[p]["gecici_mac_puani"] = 0
             current_players = []
 
-    # Streak Hesabı
     all_matches_chronological.sort(key=lambda x: x['tarih'])
     temp_streaks = {}
     for match in all_matches_chronological:
@@ -463,7 +453,7 @@ def istatistikleri_hesapla():
     return player_stats, match_history, all_matches_chronological
 
 # =============================================================================
-# 3. GİRİŞ EKRANI
+# 3. KULLANICI ARAYÜZ FONKSİYONLARI (DEFINITIONS)
 # =============================================================================
 
 def login_screen():
@@ -489,10 +479,6 @@ def login_screen():
                 else: st.error("Tablo formatı hatalı!")
 
 def logout(): st.session_state.clear(); st.rerun()
-
-# =============================================================================
-# 4. OYUN YÖNETİMİ
-# =============================================================================
 
 def game_interface():
     if "game_active" not in st.session_state: st.session_state["game_active"] = False
@@ -591,10 +577,6 @@ def game_interface():
         if st.button("⚠️ Son Satırı Sil"):
             if not st.session_state["temp_df"].empty: st.session_state["temp_df"] = st.session_state["temp_df"][:-1]; st.rerun()
 
-# =============================================================================
-# 5. KKD LİDERLİK
-# =============================================================================
-
 def kkd_leaderboard_interface():
     st.markdown("<h2>🏆 KKD Liderlik Tablosu</h2>", unsafe_allow_html=True)
     stats, _, _ = istatistikleri_hesapla()
@@ -603,12 +585,8 @@ def kkd_leaderboard_interface():
     if not df_stats.empty:
         df_stats['win_rate'] = (df_stats['pozitif_mac_sayisi'] / df_stats['mac_sayisi']) * 100
         elo_table = df_stats[['mac_sayisi', 'kkd', 'win_rate']].sort_values('kkd', ascending=False)
-        elo_table.columns = ['Toplam Maç', 'KKD Puanı', 'Başarı %']
-        st.dataframe(elo_table.style.format({'Başarı %': "{:.1f}%", 'KKD Puanı': "{:.0f}"}), use_container_width=True)
-
-# =============================================================================
-# 6. İSTATİSTİK ARAYÜZÜ (REWIND & STREAK)
-# =============================================================================
+        elo_table.columns = ['Maç Sayısı', 'KKD Puanı', 'Kazanma %']
+        st.dataframe(elo_table.style.format({'Kazanma %': "{:.1f}%", 'KKD Puanı': "{:.0f}"}), use_container_width=True)
 
 def stats_interface():
     st.markdown("<h2>📊 Detaylı İstatistik Merkezi</h2>", unsafe_allow_html=True)
@@ -618,7 +596,6 @@ def stats_interface():
     tabs = st.tabs(["🔥 Seriler", "⚖️ Averaj", "📅 Rewind", "🏆 Genel", "📜 Arşiv", "🚫 Cezalar", "🤝 Komandit"])
     df_stats = pd.DataFrame.from_dict(stats, orient='index')
 
-    # 1. SERİLER
     with tabs[0]:
         st.subheader("🔥 Galibiyet ve Mağlubiyet Serileri")
         best_streaker = df_stats['max_win_streak'].idxmax()
@@ -626,15 +603,20 @@ def stats_interface():
         c1, c2 = st.columns(2)
         c1.success(f"🚀 **En Uzun Galibiyet:**\n\n# {best_streaker} ({df_stats['max_win_streak'].max()} Maç)")
         c2.error(f"💀 **En Uzun Mağlubiyet:**\n\n# {worst_streaker} ({df_stats['max_loss_streak'].max()} Maç)")
-        st.dataframe(df_stats[['win_streak', 'max_win_streak', 'loss_streak', 'max_loss_streak']].sort_values('win_streak', ascending=False), use_container_width=True)
+        
+        streak_df = df_stats[['win_streak', 'max_win_streak', 'loss_streak', 'max_loss_streak']].sort_values('win_streak', ascending=False)
+        streak_df.columns = ["Mevcut Win", "Rekor Win", "Mevcut Loss", "Rekor Loss"]
+        st.dataframe(streak_df, use_container_width=True)
 
-    # 2. AVERAJ (YENİ SEKME)
     with tabs[1]:
         st.subheader("⚖️ Averaj Liderlik (Ort. Puan)")
-        df_stats['averaj'] = df_stats['toplam_puan'] / df_stats['mac_sayisi']
-        st.dataframe(df_stats[['mac_sayisi', 'toplam_puan', 'averaj']].sort_values('averaj', ascending=False).style.format({'averaj': "{:.1f}"}), use_container_width=True)
+        # SIFIRA BÖLME HATASI DÜZELTİLDİ
+        df_stats['averaj'] = df_stats.apply(lambda row: row['toplam_puan'] / row['mac_sayisi'] if row['mac_sayisi'] > 0 else 0, axis=1)
+        
+        avg_df = df_stats[['mac_sayisi', 'toplam_puan', 'averaj']].sort_values('averaj', ascending=False)
+        avg_df.columns = ["Maç Sayısı", "Toplam Puan", "Ortalama"]
+        st.dataframe(avg_df.style.format({'Ortalama': "{:.1f}"}), use_container_width=True)
 
-    # 3. REWIND
     with tabs[2]:
         st.subheader("📅 Zaman Tüneli")
         if not chronological_matches: st.info("Tarih verisi yok."); return
@@ -691,16 +673,13 @@ def stats_interface():
                 
                 st.success(f"👑 **Dönemin Kralı:** {king_of_period} (WR: %{king_stats['win_rate']:.1f})")
                 
-                st.markdown("### 🏆 Onur (ve Utanç) Tablosu")
                 cols = st.columns(3)
                 col_idx = 0
-                
                 for c_type, title in FUNNY_TITLES.items():
                     victim = df_p[c_type].idxmax()
                     count = df_p.loc[victim, c_type]
                     matches = df_p.loc[victim, 'matches']
                     rate = count / matches if matches > 0 else 0
-                    
                     if count > 0:
                         with cols[col_idx % 3]:
                             st.error(f"**{title}**\n\n**{victim}**\n\nTop: {count} | Ort: {rate:.1f}")
@@ -708,14 +687,20 @@ def stats_interface():
                 
                 st.divider()
                 st.write("**Detaylı Dönem Tablosu**")
-                st.dataframe(df_p[['matches', 'wins', 'win_rate', 'puan']].sort_values('win_rate', ascending=False).style.format({'win_rate': "{:.1f}%"}), use_container_width=True)
+                
+                # SÜTUN İSİMLERİNİ DÜZELT
+                rewind_display = df_p[['matches', 'wins', 'win_rate', 'puan']].sort_values('win_rate', ascending=False)
+                rewind_display.columns = ["Maç Sayısı", "Galibiyet", "Kazanma %", "Puan"]
+                st.dataframe(rewind_display.style.format({'Kazanma %': "{:.1f}%"}), use_container_width=True)
 
         else: st.warning("Maç yok.")
 
     with tabs[3]:
         st.subheader("🏆 Genel")
         if not df_stats.empty:
-            st.dataframe(df_stats[['mac_sayisi', 'toplam_puan']].sort_values('toplam_puan', ascending=False), use_container_width=True)
+            general_df = df_stats[['mac_sayisi', 'toplam_puan']].sort_values('toplam_puan', ascending=False)
+            general_df.columns = ["Maç Sayısı", "Toplam Puan"]
+            st.dataframe(general_df, use_container_width=True)
     with tabs[4]:
         st.subheader("📜 Arşiv")
         if match_history:
@@ -747,7 +732,15 @@ def stats_interface():
             df_ceza = pd.DataFrame(ceza_records)
             df_ceza.set_index('Oyuncu', inplace=True)
             st.write("### 🟥 Kim Ne Kadar Yedi? (Toplam & Ort)")
-            st.dataframe(df_ceza, use_container_width=True)
+            
+            # MATPLOTLIB HATA KORUMASI
+            if HAS_MATPLOTLIB:
+                try:
+                    st.dataframe(df_ceza.style.background_gradient(cmap="Reds"), use_container_width=True)
+                except:
+                    st.dataframe(df_ceza, use_container_width=True)
+            else:
+                st.dataframe(df_ceza, use_container_width=True)
             
             st.write("### 💸 Puan Kaybı Dağılımı")
             puan_loss_data = {}
@@ -766,12 +759,11 @@ def stats_interface():
         st.subheader("🤝 Komanditlik")
         me = st.session_state["username"]
         if me in stats and stats[me]['partnerler']:
-            p_list = [{"Komandit": p, "Maç": d['birlikte_mac'], "Kazanma %": d['beraber_kazanma']/d['birlikte_mac']*100} for p, d in stats[me]['partnerler'].items()]
+            p_list = []
+            for p, d in stats[me]['partnerler'].items():
+                rate = d['beraber_kazanma']/d['birlikte_mac']*100 if d['birlikte_mac'] > 0 else 0
+                p_list.append({"Komandit": p, "Maç": d['birlikte_mac'], "Kazanma %": rate})
             st.dataframe(pd.DataFrame(p_list).sort_values(by="Kazanma %", ascending=False), use_container_width=True)
-
-# =============================================================================
-# 7. PROFİL EKRANI
-# =============================================================================
 
 def profile_interface():
     st.markdown(f"<h2>👤 Profil: {st.session_state['username']}</h2>", unsafe_allow_html=True)
@@ -780,11 +772,16 @@ def profile_interface():
     
     if stats and my_name in stats:
         my_stats = stats[my_name]
-        
-        # Yeni Metrikler
+        cezalar = my_stats['cezalar']
+        fav_ceza = "Temiz"; fav_oran = 0
+        if cezalar:
+            fav_ceza = max(cezalar, key=cezalar.get)
+            toplam_ceza = sum(cezalar.values())
+            fav_oran = (cezalar[fav_ceza] / toplam_ceza * 100) if toplam_ceza > 0 else 0
+
+        win_rate = (my_stats['pozitif_mac_sayisi'] / my_stats['mac_sayisi']) * 100 if my_stats['mac_sayisi'] > 0 else 0
         avg_ceza = my_stats['toplam_ceza_puani'] / my_stats['mac_sayisi'] if my_stats['mac_sayisi'] > 0 else 0
         avg_koz = my_stats['toplam_koz_puani'] / my_stats['mac_sayisi'] if my_stats['mac_sayisi'] > 0 else 0
-        win_rate = (my_stats['pozitif_mac_sayisi'] / my_stats['mac_sayisi']) * 100 if my_stats['mac_sayisi'] > 0 else 0
         
         c1, c2, c3 = st.columns(3)
         c1.metric("Toplam Maç", my_stats['mac_sayisi'])
@@ -797,9 +794,6 @@ def profile_interface():
         
         st.divider()
         st.subheader("🎓 Akıllı Koç Analizi")
-        cezalar = my_stats['cezalar']
-        fav_ceza = max(cezalar, key=cezalar.get) if cezalar else "Temiz"
-        
         if fav_ceza in VIDEO_MAP:
             st.info(f"Koç diyor ki: **{fav_ceza}** cezasını çok yiyorsun. Şu dersi izle:")
             st.link_button(label="📺 Videoyu YouTube'da İzlemek İçin Tıkla", url=VIDEO_MAP[fav_ceza])
@@ -834,10 +828,6 @@ def profile_interface():
         if st.button("Bilgileri Güncelle"):
             if update_user_in_sheet(my_name, new_username, new_pass if new_pass else "1234", st.session_state["role"]):
                 st.success("Güncellendi!"); time.sleep(1); st.session_state["logged_in"] = False; st.rerun()
-
-# =============================================================================
-# 8. YÖNETİM PANELİ
-# =============================================================================
 
 def admin_panel():
     st.markdown("<h2>🛠️ Yönetim Paneli</h2>", unsafe_allow_html=True)
@@ -884,7 +874,7 @@ def admin_panel():
                     st.rerun()
 
 # =============================================================================
-# 9. ANA UYGULAMA
+# 9. ANA UYGULAMA (EN ALTTA)
 # =============================================================================
 
 st.set_page_config(page_title="King İstatistik Kurumu", layout="wide", page_icon="👑")
