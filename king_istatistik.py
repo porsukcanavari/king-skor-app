@@ -3,160 +3,146 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import os
-import json
-import time
-import math
-import uuid
 import re
-
-# Matplotlib kontrolü
-try:
-    import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
+import time
 
 # =============================================================================
-# 🚨 SABİT AYARLAR VE LİNKLER
+# 🚨 SABİT AYARLAR
 # =============================================================================
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1wTEdK-MvfaYMvgHmUPAjD4sCE7maMDNOhs18tgLSzKg/edit"
 
-# ELO (KKD) AYARLARI
 STARTING_ELO = 1000
 K_FACTOR = 32
 SOLO_MULTIPLIER = 1.5
 
-# YOUTUBE OYNATMA LİSTESİ
 PLAYLIST_LINK = "https://www.youtube.com/playlist?list=PLsBHfG2XM8K1atYDUI4BQmv2rz1WysjwA"
-VIDEO_MAP = {
-    "Rıfkı": PLAYLIST_LINK, "Kız Almaz": PLAYLIST_LINK, "Erkek Almaz": PLAYLIST_LINK,
-    "Kupa Almaz": PLAYLIST_LINK, "El Almaz": PLAYLIST_LINK, "Son İki": PLAYLIST_LINK, "Koz (Tümü)": PLAYLIST_LINK
-}
+VIDEO_MAP = {k: PLAYLIST_LINK for k in ["Rıfkı", "Kız Almaz", "Erkek Almaz", "Kupa Almaz", "El Almaz", "Son İki", "Koz (Tümü)"]}
 
-# KOMİK UNVANLAR
 FUNNY_TITLES = {
-    "Rıfkı": "🩸 Rıfkızede",
-    "Kız Almaz": "💔 Kızların Sevgilisi",
-    "Erkek Almaz": "👨‍❤️‍👨 Erkek Koleksiyoncusu",
-    "Kupa Almaz": "🍷 Kupa Canavarı",
-    "El Almaz": "🤲 El Arsızı", 
-    "Son İki": "🛑 Son Durak",
-    "Koz (Tümü)": "♠️ Koz Baronu" 
+    "Rıfkı": "🩸 Rıfkızede", "Kız Almaz": "💔 Kızların Sevgilisi", "Erkek Almaz": "👨‍❤️‍👨 Erkek Koleksiyoncusu",
+    "Kupa Almaz": "🍷 Kupa Canavarı", "El Almaz": "🤲 El Arsızı", "Son İki": "🛑 Son Durak", "Koz (Tümü)": "♠️ Koz Baronu"
 }
 
-# OYUN KURALLARI
 OYUN_KURALLARI = {
-    "Rıfkı":        {"puan": -320, "adet": 1,  "limit": 2}, 
-    "Kız Almaz":    {"puan": -100, "adet": 4,  "limit": 2},
-    "Erkek Almaz":  {"puan": -60,  "adet": 8,  "limit": 2},
-    "Kupa Almaz":   {"puan": -30,  "adet": 13, "limit": 2},
-    "El Almaz":     {"puan": -50,  "adet": 13, "limit": 2},
-    "Son İki":      {"puan": -180, "adet": 2,  "limit": 2},
-    "Koz (Tümü)":   {"puan": 50,   "adet": 104,"limit": 1}
+    "Rıfkı": {"puan": -320, "adet": 1, "limit": 2}, "Kız Almaz": {"puan": -100, "adet": 4, "limit": 2},
+    "Erkek Almaz": {"puan": -60, "adet": 8, "limit": 2}, "Kupa Almaz": {"puan": -30, "adet": 13, "limit": 2},
+    "El Almaz": {"puan": -50, "adet": 13, "limit": 2}, "Son İki": {"puan": -180, "adet": 2, "limit": 2},
+    "Koz (Tümü)": {"puan": 50, "adet": 104, "limit": 1}
 }
 OYUN_SIRALAMASI = list(OYUN_KURALLARI.keys())
 
 # =============================================================================
-# 0. GÖRSEL AYARLAR VE CSS
+# 0. GÖRSEL AYARLAR
 # =============================================================================
-
 def inject_custom_css():
     st.markdown("""
     <style>
         .stApp { background-color: #0e1117; }
         h1 { color: #FFD700 !important; text-align: center; text-shadow: 2px 2px 4px #000000; font-family: 'Arial Black', sans-serif; margin-bottom: 5px; }
         h2, h3 { color: #ff4b4b !important; border-bottom: 2px solid #333; padding-bottom: 10px; }
-        
         .stButton > button { width: 100% !important; background-color: #990000; color: white; border-radius: 8px; border: 1px solid #330000; font-weight: bold; }
         .stButton > button:hover { background-color: #ff0000; border-color: white; transform: scale(1.01); }
-        
         .stLinkButton > a { width: 100% !important; background-color: #262730 !important; color: #FFD700 !important; border: 1px solid #FFD700 !important; font-weight: bold !important; display: flex; justify-content: center; align-items: center; }
-        
         div[role="radiogroup"] { background-color: #262730; padding: 10px; border-radius: 15px; display: flex; justify-content: center; overflow-x: auto; white-space: nowrap; }
         div[role="radiogroup"] label { color: white !important; font-weight: bold !important; font-size: 16px !important; padding: 0 15px; cursor: pointer; }
-        
         div[data-testid="stMetric"] { background-color: #262730; padding: 10px; border-radius: 10px; border: 1px solid #444; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         div[data-testid="stDataFrame"] { border: 1px solid #444; border-radius: 5px; }
-
-        header {visibility: hidden !important; display: none !important;}
-        [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
-        [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
-        footer {visibility: hidden !important; display: none !important;}
-        section[data-testid="stSidebar"] {visibility: hidden !important; display: none !important;}
-        .viewerBadge_container__1QSob { display: none !important; }
-        
+        header, footer {visibility: hidden !important; display: none !important;}
         .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # =============================================================================
-# 1. GOOGLE SHEETS
+# 1. GOOGLE SHEETS BAĞLANTISI (KOTA DOSTU)
 # =============================================================================
-
 @st.cache_resource
 def get_google_sheet_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds_dict = st.secrets["gcp_service_account"]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    client = gspread.authorize(creds)
-    return client
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    return gspread.authorize(creds)
 
 def get_sheet_by_url():
-    client = get_google_sheet_client()
-    return client.open_by_url(SHEET_URL)
+    return get_google_sheet_client().open_by_url(SHEET_URL)
+
+# ÖNEMLİ: Bu fonksiyon verileri önbelleğe alır. Her tıkta API'ye gitmez.
+@st.cache_data(ttl=300) # 5 dakikada bir yeniler, ya da biz clear_cache yapınca.
+def fetch_all_data():
+    try:
+        wb = get_sheet_by_url()
+        users_data = wb.worksheet("Users").get_all_records()
+        matches_data = wb.worksheet("Maclar").get_all_values()
+        return users_data, matches_data
+    except Exception as e:
+        return [], []
+
+def clear_cache():
+    fetch_all_data.clear()
 
 def get_users_map():
-    try:
-        sheet = get_sheet_by_url().worksheet("Users")
-        data = sheet.get_all_records()
-        id_to_name = {}
-        name_to_id = {}
-        full_data = []
-        for row in data:
-            u_id = row.get('UserID')
-            u_name = str(row.get('Username')).strip()
-            if u_id is not None and str(u_id).isdigit():
+    users_data, _ = fetch_all_data()
+    id_to_name = {}
+    name_to_id = {}
+    full_data = []
+    
+    if not users_data: return {}, {}, pd.DataFrame()
+
+    for row in users_data:
+        u_id = row.get('UserID')
+        u_name = str(row.get('Username')).strip()
+        if u_id is not None: # 0 da bir değerdir
+            try:
                 u_id = int(u_id)
                 id_to_name[u_id] = u_name
                 name_to_id[u_name] = u_id
                 full_data.append(row)
-        return id_to_name, name_to_id, pd.DataFrame(full_data)
-    except: return {}, {}, pd.DataFrame()
+            except: pass
+    return id_to_name, name_to_id, pd.DataFrame(full_data)
 
-def save_elos_to_users_sheet(elo_data_by_id):
+def save_match_to_sheet(header_row, data_rows, total_row, elo_dict):
     try:
         wb = get_sheet_by_url()
-        sheet = wb.worksheet("Users")
-        all_values = sheet.get_all_values()
-        if not all_values: return False
+        # Maçları Yaz
+        sheet_maclar = wb.worksheet("Maclar")
+        append_data = [[""]*5, header_row[:]] # Boşluk ve Başlık
+        # Data rows
+        for dr in data_rows: append_data.append(dr)
+        append_data.append(total_row)
+        append_data.append(["----------------------------------------"] * 5)
+        sheet_maclar.append_rows(append_data)
+        
+        # ELO Güncelle (Users tablosu)
+        sheet_users = wb.worksheet("Users")
+        all_values = sheet_users.get_all_values()
         headers = all_values[0]
         try:
             uid_idx = headers.index("UserID")
             kkd_idx = headers.index("KKD")
         except: return False
+        
         updated_data = [headers]
         for row in all_values[1:]:
             try:
                 current_id = int(row[uid_idx])
                 while len(row) <= kkd_idx: row.append("")
-                if current_id in elo_data_by_id:
-                    row[kkd_idx] = int(elo_data_by_id[current_id])
+                if current_id in elo_dict:
+                    row[kkd_idx] = int(elo_dict[current_id])
             except: pass
             updated_data.append(row)
-        sheet.clear()
-        sheet.update(updated_data)
+        
+        sheet_users.clear()
+        sheet_users.update(updated_data)
+        
+        clear_cache() # Önbelleği temizle ki yeni veriler gelsin
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"Kayıt Hatası: {e}")
+        return False
 
 def update_user_in_sheet(old_username, new_username, password, role, delete=False):
     try:
         wb = get_sheet_by_url()
         sheet = wb.worksheet("Users")
         all_data = sheet.get_all_values()
-        if not all_data: 
-            sheet.append_row(["Username", "Password", "Role", "UserID", "KKD"])
-            all_data = sheet.get_all_values()
         headers = all_data[0]
         try:
             user_idx = headers.index("Username")
@@ -164,34 +150,32 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
             role_idx = headers.index("Role")
             uid_idx = headers.index("UserID")
         except: return False
-        found_row_idx = -1
+        
+        found_idx = -1
         for i, row in enumerate(all_data):
-            if i == 0: continue
+            if i==0: continue
             if str(row[user_idx]).strip() == old_username.strip():
-                found_row_idx = i
-                break
-        if found_row_idx != -1:
+                found_idx = i; break
+        
+        if found_idx != -1:
             if delete:
-                sheet.delete_rows(found_row_idx + 1)
-                return "deleted"
+                sheet.delete_rows(found_idx + 1)
             else:
-                sheet.update_cell(found_row_idx + 1, user_idx + 1, new_username)
-                sheet.update_cell(found_row_idx + 1, pass_idx + 1, password)
-                sheet.update_cell(found_row_idx + 1, role_idx + 1, role)
-                return "updated"
+                sheet.update_cell(found_idx + 1, user_idx + 1, new_username)
+                sheet.update_cell(found_idx + 1, pass_idx + 1, password)
+                sheet.update_cell(found_idx + 1, role_idx + 1, role)
         else:
             if not delete:
-                current_ids = []
+                c_ids = []
                 for row in all_data[1:]:
-                    try: current_ids.append(int(row[uid_idx]))
+                    try: c_ids.append(int(row[uid_idx]))
                     except: pass
-                new_id = max(current_ids) + 1 if current_ids else 0
+                new_id = max(c_ids) + 1 if c_ids else 0
                 sheet.append_row([new_username, password, role, new_id, STARTING_ELO])
-                return "added"
-        return False
-    except Exception as e:
-        st.error(f"Hata: {e}")
-        return False
+        
+        clear_cache()
+        return True
+    except: return False
 
 def delete_match_from_sheet(match_title):
     try:
@@ -208,6 +192,7 @@ def delete_match_from_sheet(match_title):
                 break
         if start != -1 and end != -1:
             sheet.delete_rows(start, end)
+            clear_cache()
             return True
         return False
     except: return False
@@ -215,14 +200,11 @@ def delete_match_from_sheet(match_title):
 # =============================================================================
 # 2. İSTATİSTİK MOTORU
 # =============================================================================
-
 def calculate_expected_score(ra, rb):
     return 1 / (1 + 10 ** ((rb - ra) / 400))
 
 def parse_date_from_header(header_str):
-    try:
-        date_part = header_str.split('(')[-1].split(')')[0]
-        return datetime.strptime(date_part.strip(), "%d.%m.%Y")
+    try: return datetime.strptime(header_str.split('(')[-1].split(')')[0].strip(), "%d.%m.%Y")
     except: return datetime.now()
 
 def extract_id_from_cell(cell_value, name_to_id_map):
@@ -235,22 +217,17 @@ def extract_id_from_cell(cell_value, name_to_id_map):
 
 def istatistikleri_hesapla():
     id_to_name, name_to_id, _ = get_users_map()
-    try:
-        wb = get_sheet_by_url()
-        sheet = wb.worksheet("Maclar")
-        raw_data = sheet.get_all_values()
-    except: return None, None, None, None
+    _, raw_data = fetch_all_data() # Cache'den çek
 
     if not raw_data: return None, None, None, None
 
     player_stats = {}
-    elo_ratings = {} 
+    elo_ratings = {}
     all_matches_chronological = []
     match_history_display = []
     
     current_match_ids = [] 
     current_match_data = {} 
-    is_king_game = False
     king_winner_id = None
 
     for row in raw_data:
@@ -260,10 +237,10 @@ def istatistikleri_hesapla():
         if first_cell.startswith("--- MAÇ:"):
             current_match_ids = []
             current_match_data = {
-                "baslik": first_cell, "tarih": parse_date_from_header(first_cell),
-                "skorlar": [], "ids": [], "ceza_detaylari": {} 
+                "baslik": first_cell,
+                "tarih": parse_date_from_header(first_cell),
+                "skorlar": [], "ids": [], "ceza_detaylari": {}
             }
-            is_king_game = False
             king_winner_id = None
             continue
             
@@ -287,8 +264,8 @@ def istatistikleri_hesapla():
             continue
 
         base_name = first_cell.split(" #")[0]
-        if "KING" in first_cell:
-            is_king_game = True
+        is_king_game = "KING" in first_cell
+        if is_king_game:
             extracted = extract_id_from_cell(first_cell, name_to_id)
             if extracted is not None: king_winner_id = extracted
         
@@ -319,7 +296,8 @@ def istatistikleri_hesapla():
             if not current_match_data: continue
             current_match_data["toplamlar"] = row
             match_elos = {pid: elo_ratings.get(pid, STARTING_ELO) for pid in current_match_ids}
-            match_results = {}; winners = 0; losers = 0
+            match_results = {}
+            winners = 0; losers = 0
             
             for i, p_id in enumerate(current_match_ids):
                 try:
@@ -373,12 +351,15 @@ def istatistikleri_hesapla():
             current_match_ids = []
 
     all_matches_chronological.sort(key=lambda x: x['tarih'])
-    temp_streaks = {} 
+    temp_streaks = {}
     for match in all_matches_chronological:
         for p_id in match['ids']:
             if p_id not in temp_streaks: temp_streaks[p_id] = {'win': 0, 'loss': 0}
             score = match['sonuclar'].get(p_id, -1)
             is_win = score >= 0
+            if "KING" in match.get("baslik", ""):
+                 pass
+
             if is_win:
                 temp_streaks[p_id]['win'] += 1; temp_streaks[p_id]['loss'] = 0
             else:
@@ -392,7 +373,7 @@ def istatistikleri_hesapla():
     return player_stats, match_history_display, all_matches_chronological, id_to_name
 
 # =============================================================================
-# 3. KULLANICI ARAYÜZ FONKSİYONLARI
+# 3. UI
 # =============================================================================
 
 def login_screen():
@@ -420,7 +401,6 @@ def logout(): st.session_state.clear(); st.rerun()
 
 def game_interface():
     id_to_name, name_to_id, _ = get_users_map()
-    
     if "game_active" not in st.session_state: st.session_state["game_active"] = False
     if "temp_df" not in st.session_state: st.session_state["temp_df"] = pd.DataFrame()
     if "game_index" not in st.session_state: st.session_state["game_index"] = 0
@@ -461,26 +441,22 @@ def game_interface():
         
         if st.button("💾 Arşivle (ID ile Kaydet)", type="primary"):
             with st.spinner("Kaydediliyor..."):
-                try:
-                    wb = get_sheet_by_url()
-                    sheet = wb.worksheet("Maclar")
-                    sheet.append_row([""] * 5)
-                    sheet.append_row([f"--- MAÇ: {st.session_state['current_match_name']} ({st.session_state['match_date']}) ---", "", "", "", ""])
-                    header_row = ["OYUN TÜRÜ"]
-                    for p in players:
-                        pid = name_to_id.get(p, "?")
-                        header_row.append(f"{p} (uid:{pid})")
-                    sheet.append_row(header_row)
-                    for idx, row in df.iterrows(): sheet.append_row([idx] + [int(row[p]) for p in players])
-                    sheet.append_row(["TOPLAM"] + [int(totals[p]) for p in players])
-                    sheet.append_row(["----------------------------------------"] * 5)
-                    stats, _, _, _ = istatistikleri_hesapla()
-                    if stats: save_elos_to_users_sheet({uid: d['kkd'] for uid, d in stats.items()})
+                header_row = ["OYUN TÜRÜ"]
+                header_row += [f"{p} (uid:{name_to_id.get(p, '?')})" for p in players]
+                
+                rows_to_save = []
+                for idx, row in df.iterrows():
+                    rows_to_save.append([idx] + [int(row[p]) for p in players])
+                
+                # ELO hesabı için
+                stats, _, _, _ = istatistikleri_hesapla()
+                elo_dict = {uid: d['kkd'] for uid, d in stats.items()} if stats else {}
+                
+                if save_match_to_sheet(header_row, rows_to_save, ["TOPLAM"] + [int(totals[p]) for p in players], elo_dict):
                     st.balloons()
                     st.session_state["game_active"] = False
                     st.session_state["temp_df"] = pd.DataFrame()
                     st.rerun()
-                except Exception as e: st.error(f"Hata: {e}")
         return
 
     st.markdown("---")
@@ -493,78 +469,75 @@ def game_interface():
             st.session_state["show_king_dialog"] = False
             st.rerun()
 
-    # Oyun Seçimi ve İlerleme Mantığı
     current_idx = st.session_state["game_index"]
     if current_idx >= len(OYUN_SIRALAMASI): current_idx = len(OYUN_SIRALAMASI) - 1
-    
     selected_game = st.selectbox("Oyun Seç:", OYUN_SIRALAMASI, index=current_idx)
     rules = OYUN_KURALLARI[selected_game]
     played_count = len([x for x in df.index if selected_game in x])
     rem = rules['limit'] - played_count
     
-    # Otomatik oyun değiştirme kontrolü
-    if rem <= 0 and not st.session_state["king_mode"]:
-        # Eğer bu oyunun limiti dolduysa ve manuel seçilmediyse bir sonrakine geçmeyi dene
-        if current_idx < len(OYUN_SIRALAMASI) - 1:
-             # Kullanıcı elle değiştirmediyse state'i güncelle
-             if OYUN_SIRALAMASI[st.session_state["game_index"]] == selected_game:
-                 st.session_state["game_index"] += 1
-                 st.rerun()
+    if rem <= 0 and not st.session_state["king_mode"] and current_idx < len(OYUN_SIRALAMASI) - 1:
+         if OYUN_SIRALAMASI[st.session_state["game_index"]] == selected_game:
+             st.session_state["game_index"] += 1; st.rerun()
 
     st.info(f"Kalan Hak: {rem} | Toplam Puan: {rules['puan'] * rules['adet']}")
+    
+    # CEZA KONTROLÜ (GÜNCELLENDİ)
+    # Mevcut satırda girilen toplam ceza
+    # Her oyuncu için max değeri = Kalan toplam - (Diğer oyuncuların şu anki girdisi)
     
     cols = st.columns(4)
     inputs = {}
     row_key_base = f"{selected_game}_{played_count}"
     
-    # Daha önce girilen toplam (Bu oyun türü için bu turda)
-    # Burada basit mantık: Her oyuncu için input al
-    current_row_sum = 0
+    # Önce session state'deki değerleri al
     for p in players:
-        # Kalan toplam adedi hesapla
-        current_inputs_sum = sum(inputs.values())
-        max_possible = rules['adet'] - current_inputs_sum
-        val = cols[players.index(p)].number_input(f"{p}", min_value=0, max_value=int(rules['adet']), step=1, key=f"in_{row_key_base}_{p}")
-        inputs[p] = val
+        key = f"in_{row_key_base}_{p}"
+        if key not in st.session_state: st.session_state[key] = 0
+        inputs[p] = st.session_state[key]
+
+    current_sum = sum(inputs.values())
+    
+    for i, p in enumerate(players):
+        # Bu oyuncu hariç diğerlerinin toplamı
+        others_sum = current_sum - inputs[p]
+        # Bu oyuncunun alabileceği max değer = Toplam Limit - Diğerleri
+        max_possible = rules['adet'] - others_sum
+        
+        # Negatif olamaz
+        if max_possible < 0: max_possible = 0
+        
+        val = cols[i].number_input(f"{p}", min_value=0, max_value=int(max_possible), step=1, key=f"in_{row_key_base}_{p}")
+        inputs[p] = val # Değeri güncelle
 
     if st.button("Kaydet ve İlerle", type="primary"):
         if sum(inputs.values()) != rules['adet']: st.error(f"Toplam {rules['adet']} olmalı!")
         else:
             row_data = {p: inputs[p] * rules['puan'] for p in players}
             st.session_state["temp_df"] = pd.concat([df, pd.DataFrame([row_data], index=[f"{selected_game} #{played_count+1}"])])
-            
-            # Eğer bu oyunun limiti dolduysa indexi artır
-            new_played_count = played_count + 1
-            if new_played_count >= rules['limit'] and st.session_state["game_index"] < len(OYUN_SIRALAMASI) - 1:
+            if played_count + 1 >= rules['limit'] and st.session_state["game_index"] < len(OYUN_SIRALAMASI) - 1:
                 st.session_state["game_index"] += 1
-            
             st.rerun()
             
     if st.button("Son Satırı Sil"):
-        if not df.empty:
-            st.session_state["temp_df"] = df[:-1]
-            # Silince indexi geri al (gerekirse)
-            # Basitlik için indexi elle geri alması daha güvenli veya sabit kalabilir
-            st.rerun()
+        if not df.empty: st.session_state["temp_df"] = df[:-1]; st.rerun()
 
 def kkd_leaderboard_interface():
     st.markdown("<h2>🏆 KKD Liderlik</h2>", unsafe_allow_html=True)
     stats, _, _, id_map = istatistikleri_hesapla()
     if not stats: st.warning("Veri yok."); return
-    
     data_list = []
     for uid, s in stats.items():
         name = id_map.get(uid, f"Unknown({uid})")
         wr = (s['pozitif_mac_sayisi']/s['mac_sayisi']*100) if s['mac_sayisi'] > 0 else 0
         data_list.append({"Oyuncu": name, "Maç": s['mac_sayisi'], "KKD": s['kkd'], "Win Rate": wr})
-        
     df = pd.DataFrame(data_list).sort_values("KKD", ascending=False)
     st.dataframe(df.style.format({"Win Rate": "{:.1f}%", "KKD": "{:.0f}"}), use_container_width=True)
 
 def stats_interface():
     st.markdown("<h2>📊 İstatistik Merkezi</h2>", unsafe_allow_html=True)
     stats, match_hist, chrono_matches, id_map = istatistikleri_hesapla()
-    if not stats: st.warning("Veri yok."); return
+    if not stats: st.warning("Henüz tamamlanmış maç verisi yok."); return
     
     rows = []
     for uid, s in stats.items():
@@ -615,18 +588,18 @@ def stats_interface():
                     p_stats[uid]['matches'] += 1
                     sc = m['sonuclar'].get(uid, 0)
                     p_stats[uid]['puan'] += sc
-                    if sc >= 0 or ("KING" in m['baslik'] and m.get("winner_id") == uid): p_stats[uid]['wins'] += 1
+                    is_win = sc >= 0
+                    if "KING" in m['baslik'] and "KING" in m['toplamlar'][0]: is_win=True # Basit king mantığı
+                    if is_win: p_stats[uid]['wins'] += 1
                     if uid in m['ceza_detaylari']:
                         for c, v in m['ceza_detaylari'][uid].items():
                             if c in p_stats[uid]: p_stats[uid][c] += v
-            
             res = []
             for uid, dat in p_stats.items():
                 dat['Oyuncu'] = id_map.get(uid, str(uid))
-                dat['wr'] = dat['wins']/dat['matches']*100
+                dat['wr'] = dat['wins']/dat['matches']*100 if dat['matches'] > 0 else 0
                 res.append(dat)
             df_r = pd.DataFrame(res).set_index("Oyuncu")
-            
             king = df_r.sort_values(['wr', 'puan'], ascending=False).index[0]
             st.success(f"👑 **Dönem Kralı:** {king} (%{df_r.loc[king, 'wr']:.1f})")
             
@@ -638,7 +611,7 @@ def stats_interface():
                 if cnt > 0:
                     cols[idx%3].error(f"**{title}**\n\n{vic} ({cnt})")
                     idx+=1
-            st.dataframe(df_r[['matches', 'wins', 'wr', 'puan']].sort_values('wr', ascending=False), use_container_width=True)
+            st.dataframe(df_r[['matches', 'wins', 'wr', 'puan']].sort_values('wr', ascending=False).style.format({'wr': "{:.1f}%"}), use_container_width=True)
         else: st.warning("Maç yok.")
 
     with tabs[3]:
@@ -665,33 +638,28 @@ def stats_interface():
                 fr[k] = f"{v} ({rt:.1f})"
             fr['Oyuncu'] = id_map.get(uid, str(uid))
             ceza_list.append(fr)
-            
         if ceza_list:
             st.write("### 🟥 Ceza Karnesi (Toplam & Ort)")
-            st.dataframe(pd.DataFrame(ceza_list).set_index("Oyuncu"), use_container_width=True)
-            loss_data = {}
-            for uid, s in stats.items():
-                name = id_map.get(uid, str(uid))
-                loss_data[name] = {}
-                for k, v in s['cezalar'].items():
-                    if k in OYUN_KURALLARI:
-                        loss_data[name][k] = v * abs(OYUN_KURALLARI[k]['puan'])
-            st.write("### 💸 Puan Kaybı")
-            st.bar_chart(pd.DataFrame(loss_data).T)
+            try:
+                st.dataframe(pd.DataFrame(ceza_list).set_index("Oyuncu").style.background_gradient(cmap="Reds"), use_container_width=True)
+            except:
+                st.dataframe(pd.DataFrame(ceza_list).set_index("Oyuncu"), use_container_width=True)
 
     with tabs[6]:
         my_id = st.session_state.get("user_id")
-        if my_id and my_id in stats:
+        if my_id is not None and my_id in stats:
             p_list = []
             for pid, d in stats[my_id]['partnerler'].items():
                 name = id_map.get(pid, str(pid))
                 rt = d['beraber_kazanma']/d['birlikte_mac']*100 if d['birlikte_mac'] > 0 else 0
                 p_list.append({"Partner": name, "Maç": d['birlikte_mac'], "Win%": rt})
-            st.dataframe(pd.DataFrame(p_list).sort_values("Win%", ascending=False), use_container_width=True)
+            if p_list:
+                st.dataframe(pd.DataFrame(p_list).sort_values("Win%", ascending=False).style.format({"Win%": "{:.1f}%"}), use_container_width=True)
+            else: st.info("Henüz partner verisi yok.")
 
 def profile_interface():
     st.markdown(f"<h2>👤 Profil: {st.session_state['username']}</h2>", unsafe_allow_html=True)
-    stats, _, _, id_map = istatistikleri_hesapla()
+    stats, match_history, _, id_map = istatistikleri_hesapla()
     uid = st.session_state.get("user_id")
     
     if uid in stats:
@@ -704,23 +672,33 @@ def profile_interface():
         c1.metric("Maç", s['mac_sayisi'])
         c2.metric("KKD", int(s['kkd']))
         c3.metric("Win Rate", f"%{wr:.1f}")
-        
         c4, c5 = st.columns(2)
         c4.metric("Ort. Ceza Puanı", f"{avg_c:.1f}")
         c5.metric("Ort. Koz Puanı", f"{avg_k:.1f}")
         
         st.divider()
         st.subheader("🎓 Akıllı Koç")
-        fav_ceza = max(s['cezalar'], key=s['cezalar'].get) if s['cezalar'] else "Yok"
-        if fav_ceza in VIDEO_MAP:
-            st.info(f"⚠️ Zayıf Yön: **{fav_ceza}**. Bunu geliştirmelisin:")
-            st.link_button("📺 Dersi İzle", VIDEO_MAP[fav_ceza])
-            
+        if s['cezalar']:
+            fav_ceza = max(s['cezalar'], key=s['cezalar'].get)
+            if fav_ceza in VIDEO_MAP:
+                st.info(f"⚠️ Zayıf Yön: **{fav_ceza}**.")
+                st.link_button("📺 Dersi İzle", VIDEO_MAP[fav_ceza])
+        
         st.divider()
-        st.write("**Son Maçlar**")
-        # Maç geçmişini buraya eklemek için istatistikleri_hesapla'dan match_history çekilmeli
-        # Ancak performans için burada basitleştirilmiş gösterim yapabiliriz
-        pass
+        st.subheader("📜 Son Oynanan Maçlar")
+        my_history = []
+        name = st.session_state['username']
+        for match in reversed(match_history):
+            if name in match['oyuncular']:
+                idx = match['oyuncular'].index(name)
+                try:
+                    score = int(match['toplamlar'][idx+1])
+                    res = "KAZANDI" if score >= 0 else "KAYBETTİ"
+                    my_history.append({"Tarih/Maç": match['baslik'].replace("--- MAÇ: ", "").replace(" ---", ""), "Puan": score, "Sonuç": res})
+                except: pass
+        if my_history:
+            st.dataframe(pd.DataFrame(my_history), use_container_width=True)
+        else: st.info("Henüz maç kaydı yok.")
 
     st.divider()
     with st.expander("Ayarlar"):
@@ -743,21 +721,16 @@ def admin_panel():
         if st.form_submit_button("Ekle/Güncelle"):
             if update_user_in_sheet(u, u, p if p else "1234", r): st.success("OK"); st.rerun()
             
-    # Kullanıcı Listesi ve Silme Butonu
     st.write("### Kullanıcı Listesi")
     if not users.empty:
         for idx, row in users.iterrows():
             col1, col2 = st.columns([4, 1])
-            with col1:
-                st.write(f"**{row['Username']}** ({row['Role']}) - ID: {row['UserID']}")
+            with col1: st.write(f"**{row['Username']}** ({row['Role']}) - ID: {row['UserID']}")
             with col2:
-                # Kendi kendini silemez
                 if row['Username'] != st.session_state['username'] and current_role == "patron":
                     if st.button("🗑️ Sil", key=f"del_user_{row['UserID']}"):
                         if update_user_in_sheet(row['Username'], "", "", "", delete=True) == "deleted":
-                            st.success(f"{row['Username']} silindi.")
-                            time.sleep(1)
-                            st.rerun()
+                            st.success("Silindi."); time.sleep(1); st.rerun()
 
 # =============================================================================
 # 9. ANA UYGULAMA (EN ALTTA)
