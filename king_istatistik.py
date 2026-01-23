@@ -7,6 +7,15 @@ import re
 import time
 from collections import defaultdict
 
+# Matplotlib kontrolü
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+
 # =============================================================================
 # 🚨 SABİT AYARLAR VE LİNKLER
 # =============================================================================
@@ -112,7 +121,7 @@ def inject_custom_css():
             color: white !important; 
             font-weight: bold !important; 
             font-size: 16px !important; 
-            padding: 8px 20px !important; 
+            padding: 8px 20px !important;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 8px;
             margin: 0 5px;
@@ -126,9 +135,9 @@ def inject_custom_css():
         
         div[data-testid="stMetric"] { 
             background: linear-gradient(135deg, #262730 0%, #363740 100%);
-            padding: 20px 15px !important; 
-            border-radius: 15px; 
-            border: 2px solid #444; 
+            padding: 20px 15px !important;
+            border-radius: 15px;
+            border: 2px solid #444;
             box-shadow: 0 6px 10px rgba(0,0,0,0.4);
         }
         
@@ -151,7 +160,7 @@ def inject_custom_css():
         }
         
         .stAlert { 
-            border-radius: 10px !important; 
+            border-radius: 10px !important;
             border: 2px solid !important;
         }
         
@@ -483,7 +492,7 @@ def delete_match_from_sheet(match_title):
         return False
 
 # =============================================================================
-# 2. İSTATİSTİK MOTORU - DÜZELTİLMİŞ
+# 2. İSTATİSTİK MOTORU - DÜZELTİLMİŞ ve HATA DÜZELTMELERİ
 # =============================================================================
 
 def calculate_expected_score(ra, rb):
@@ -497,6 +506,8 @@ def parse_date_from_header(header_str):
         return datetime.now()
 
 def extract_id_from_cell(cell_value, name_to_id_map):
+    if not cell_value:
+        return None
     s = str(cell_value).strip()
     
     # (uid:123) formatını kontrol et
@@ -524,7 +535,7 @@ def istatistikleri_hesapla():
     match_history_display = []
     
     current_match_ids = []
-    current_match_data = {}
+    current_match_data = None
     king_winner_id = None
     
     # Oyuncuların başlangıç KKD'lerini al
@@ -579,6 +590,10 @@ def istatistikleri_hesapla():
             king_winner_id = None
             continue
         
+        # Eğer current_match_data yoksa atla
+        if current_match_data is None:
+            continue
+        
         # Oyuncu listesi
         if first_cell == "OYUN TÜRÜ":
             for col_idx in range(1, len(row)):
@@ -606,7 +621,10 @@ def istatistikleri_hesapla():
         
         # Oyun skorları
         base_name = first_cell.split(" #")[0].split(" (")[0]
-        if (base_name in OYUN_KURALLARI or is_king_game) and current_match_ids:
+        if (base_name in OYUN_KURALLARI or is_king_game) and current_match_ids and current_match_data:
+            # current_match_data["skorlar"]'ın var olduğundan emin ol
+            if "skorlar" not in current_match_data:
+                current_match_data["skorlar"] = []
             current_match_data["skorlar"].append(row)
             
             for i, p_id in enumerate(current_match_ids):
@@ -651,7 +669,7 @@ def istatistikleri_hesapla():
                     continue
         
         # Toplam satırı
-        if first_cell == "TOPLAM" and current_match_ids:
+        if first_cell == "TOPLAM" and current_match_ids and current_match_data:
             current_match_data["toplamlar"] = row
             match_results = {}
             winners = []
@@ -660,7 +678,10 @@ def istatistikleri_hesapla():
             for i, p_id in enumerate(current_match_ids):
                 try:
                     if i + 1 < len(row):
-                        total = int(row[i + 1])
+                        total_val = row[i + 1]
+                        if total_val in ["", " ", "-"]:
+                            continue
+                        total = int(total_val)
                         match_results[p_id] = total
                         
                         # Kazanan/kaybeden belirle
@@ -756,7 +777,11 @@ def istatistikleri_hesapla():
             
             # Sıfırla
             current_match_ids = []
-            current_match_data = {}
+            current_match_data = None
+    
+    # Son maçı ekle (eğer varsa)
+    if current_match_data and current_match_ids:
+        all_matches_chronological.append(current_match_data)
     
     # Streak hesaplama - DÜZELTİLMİŞ
     all_matches_chronological.sort(key=lambda x: x['tarih'])
@@ -765,7 +790,6 @@ def istatistikleri_hesapla():
     streak_tracker = {uid: {'current_win': 0, 'current_loss': 0} for uid in id_to_name.keys()}
     
     for match in all_matches_chronological:
-        # Sadece bu maçta oynayanların streak'ini güncelle
         for p_id in match.get('ids', []):
             if p_id not in player_stats:
                 continue
@@ -793,7 +817,72 @@ def istatistikleri_hesapla():
     return player_stats, match_history_display, all_matches_chronological, id_to_name
 
 # =============================================================================
-# 3. UI BİLEŞENLERİ
+# 3. GRAFİK FONKSİYONLARI
+# =============================================================================
+
+def create_bar_chart(labels, values, title, colors=None):
+    """Basit bar chart oluştur"""
+    if not HAS_MATPLOTLIB:
+        return None
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    if colors is None:
+        colors = ['#28a745'] * len(labels)
+    
+    bars = ax.bar(range(len(labels)), values, color=colors)
+    
+    # Değerleri üzerine yaz
+    for i, v in enumerate(values):
+        ax.text(i, v + (max(values) * 0.01), f"{v:.1f}", 
+               ha='center', va='bottom', fontweight='bold')
+    
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=45, ha='right')
+    ax.set_ylabel('Değer')
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    
+    return fig
+
+def create_pie_chart(labels, sizes, title, colors=None):
+    """Basit pie chart oluştur"""
+    if not HAS_MATPLOTLIB:
+        return None
+    
+    fig, ax = plt.subplots(figsize=(8, 8))
+    
+    if colors is None:
+        colors = plt.cm.Set3.colors
+    
+    ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%',
+          startangle=90, wedgeprops={'edgecolor': 'white'})
+    ax.set_title(title)
+    
+    return fig
+
+def create_line_chart(x_values, y_values, title, color='#FFD700'):
+    """Basit line chart oluştur"""
+    if not HAS_MATPLOTLIB:
+        return None
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    ax.plot(x_values, y_values, marker='o', linewidth=3, color=color, markersize=8)
+    ax.set_xlabel('Maç')
+    ax.set_ylabel('Puan')
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    
+    # Noktaları renklendir
+    for i, y in enumerate(y_values):
+        point_color = '#28a745' if y >= 0 else '#dc3545'
+        ax.plot(i, y, 'o', color=point_color, markersize=10)
+    
+    return fig
+
+# =============================================================================
+# 4. UI BİLEŞENLERİ
 # =============================================================================
 
 def create_metric_card(title, value, delta=None, icon="📊"):
@@ -892,7 +981,7 @@ def logout():
     st.rerun()
 
 # =============================================================================
-# 4. ANA SAYFALAR
+# 5. ANA SAYFALAR
 # =============================================================================
 
 def game_interface():
@@ -1010,45 +1099,56 @@ def game_interface():
                     delta=delta
                 )
     
-    # Oyun bitirme kontrolü
+    # Oyun bitirme kontrolü - GELİŞTİRİLMİŞ
+    # Tüm cezaların limitlerinin dolup dolmadığını kontrol et
+    all_limits_reached = True
+    for game_name, rules in OYUN_KURALLARI.items():
+        played_count = len([x for x in df.index if game_name in str(x)])
+        if played_count < rules['limit']:
+            all_limits_reached = False
+            break
+    
     total_limit = sum([k['limit'] for k in OYUN_KURALLARI.values()])
-    game_complete = len(df) >= total_limit or st.session_state["king_mode"]
+    game_complete = len(df) >= total_limit or st.session_state["king_mode"] or all_limits_reached
     
     if game_complete:
         st.success("🏁 OYUN BİTTİ!")
         
         if st.button("💾 Maçı Arşivle ve Kaydet", type="primary", use_container_width=True):
             with st.spinner("Kaydediliyor..."):
-                # Header satırı
-                header_row = ["OYUN TÜRÜ"]
-                for p in players:
-                    uid = name_to_id.get(p, "?")
-                    header_row.append(f"{p} (uid:{uid})")
-                
-                # Data satırları
-                rows_to_save = []
-                for idx, row in df.iterrows():
-                    row_data = [str(idx)]
+                try:
+                    # Header satırı
+                    header_row = ["OYUN TÜRÜ"]
                     for p in players:
-                        row_data.append(int(row[p]))
-                    rows_to_save.append(row_data)
-                
-                # Toplam satırı
-                total_row = ["TOPLAM"] + [int(totals[p]) for p in players]
-                
-                # ELO hesapla
-                stats, _, _, _ = istatistikleri_hesapla()
-                elo_dict = {}
-                if stats:
-                    for uid, data in stats.items():
-                        if uid in name_to_id.values():
-                            elo_dict[uid] = data['kkd']
-                
-                # Kaydet
-                if save_match_to_sheet(header_row, rows_to_save, total_row, elo_dict):
-                    st.session_state["game_active"] = False
-                    st.session_state["temp_df"] = pd.DataFrame()
-                    st.rerun()
+                        uid = name_to_id.get(p, "?")
+                        header_row.append(f"{p} (uid:{uid})")
+                    
+                    # Data satırları
+                    rows_to_save = []
+                    for idx, row in df.iterrows():
+                        row_data = [str(idx)]
+                        for p in players:
+                            row_data.append(int(row[p]))
+                        rows_to_save.append(row_data)
+                    
+                    # Toplam satırı
+                    total_row = ["TOPLAM"] + [int(totals[p]) for p in players]
+                    
+                    # ELO hesapla
+                    stats, _, _, _ = istatistikleri_hesapla()
+                    elo_dict = {}
+                    if stats:
+                        for uid, data in stats.items():
+                            if uid in name_to_id.values():
+                                elo_dict[uid] = data['kkd']
+                    
+                    # Kaydet
+                    if save_match_to_sheet(header_row, rows_to_save, total_row, elo_dict):
+                        st.session_state["game_active"] = False
+                        st.session_state["temp_df"] = pd.DataFrame()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Kayıt sırasında hata: {str(e)}")
         
         if st.button("🔄 Yeni Maç Başlat", use_container_width=True):
             st.session_state["game_active"] = False
@@ -1111,20 +1211,32 @@ def game_interface():
     played_count = len([x for x in df.index if selected_game in str(x)])
     remaining = rules['limit'] - played_count
     
+    # Eğer bu oyun için limit dolduysa, kullanıcıyı uyar
     if remaining <= 0:
-        st.warning(f"⚠️ Bu oyun için limit doldu ({rules['limit']}/{rules['limit']})")
-        if st.button("➡️ Sonraki Oyun Türüne Geç", use_container_width=True):
-            next_idx = (current_idx + 1) % len(OYUN_SIRALAMASI)
-            st.session_state["game_index"] = next_idx
-            st.rerun()
-    else:
-        st.info(f"""
-        **Oyun Bilgileri:**
-        - Kalan Hak: **{remaining}** / {rules['limit']}
-        - Birim Puan: **{rules['puan']}**
-        - Toplam Kart: **{rules['adet']}**
-        - Maksimum Puan: **{rules['puan'] * rules['adet']}**
-        """)
+        st.error(f"❌ Bu oyun için limit doldu! Maksimum {rules['limit']} kez oynanabilir.")
+        
+        # Otomatik olarak sonraki oyuna geç
+        if st.session_state["game_index"] < len(OYUN_SIRALAMASI) - 1:
+            st.info("Sonraki oyun türüne geçiliyor...")
+            next_idx = st.session_state["game_index"] + 1
+            # Tüm oyunlar bitene kadar kontrol et
+            while next_idx < len(OYUN_SIRALAMASI):
+                next_game = OYUN_SIRALAMASI[next_idx]
+                next_played = len([x for x in df.index if next_game in str(x)])
+                if next_played < OYUN_KURALLARI[next_game]['limit']:
+                    st.session_state["game_index"] = next_idx
+                    st.rerun()
+                next_idx += 1
+        
+        return
+    
+    st.info(f"""
+    **Oyun Bilgileri:**
+    - Kalan Hak: **{remaining}** / {rules['limit']}
+    - Birim Puan: **{rules['puan']}**
+    - Toplam Kart: **{rules['adet']}**
+    - Maksimum Puan: **{rules['puan'] * rules['adet']}**
+    """)
     
     # Oyuncu girişleri
     st.subheader("📝 Oyuncu Dağılımı")
@@ -1145,14 +1257,15 @@ def game_interface():
             # Mevcut değeri al
             current_val = st.session_state.get(key, 0)
             
-            # Input
+            # Input - ARTIK DOĞRUDAN ENTER'A BASMAKLA DEĞİŞMEYECEK
             val = st.number_input(
                 p,
                 min_value=0,
                 max_value=max_val,
                 value=current_val,
                 key=key,
-                help=f"{p} için kart sayısı (0-{max_val})"
+                help=f"{p} için kart sayısı (0-{max_val})",
+                step=1
             )
             inputs[p] = val
             total_entered += val
@@ -1162,6 +1275,8 @@ def game_interface():
     
     if total_entered != rules['adet']:
         st.error(f"⚠️ Toplam kart sayısı {rules['adet']} olmalı! ({total_entered} girildi)")
+        # Kaydet butonunu devre dışı bırak
+        save_disabled = True
     else:
         # Oranları göster
         st.write("**Oranlar:**")
@@ -1170,13 +1285,14 @@ def game_interface():
             with ratio_cols[i]:
                 percentage = (inputs[p] / rules['adet']) * 100
                 st.metric(p, f"%{percentage:.1f}")
+        save_disabled = False
     
     # Kaydet butonları
     col_save, col_undo, col_reset = st.columns([2, 1, 1])
     
     with col_save:
         if st.button("💾 Skoru Kaydet", type="primary", use_container_width=True,
-                    disabled=total_entered != rules['adet']):
+                    disabled=save_disabled):
             # Puanları hesapla
             row_data = {p: inputs[p] * rules['puan'] for p in players}
             
@@ -1190,8 +1306,22 @@ def game_interface():
             
             # Limit kontrolü
             if played_count + 1 >= rules['limit']:
-                next_idx = (current_idx + 1) % len(OYUN_SIRALAMASI)
-                st.session_state["game_index"] = next_idx
+                # Sonraki oyunu bul
+                next_idx = current_idx
+                found_next = False
+                for idx in range(current_idx + 1, len(OYUN_SIRALAMASI)):
+                    next_game = OYUN_SIRALAMASI[idx]
+                    next_played = len([x for x in st.session_state["temp_df"].index if next_game in str(x)])
+                    if next_played < OYUN_KURALLARI[next_game]['limit']:
+                        next_idx = idx
+                        found_next = True
+                        break
+                
+                if found_next:
+                    st.session_state["game_index"] = next_idx
+                else:
+                    # Tüm oyunlar doldu
+                    st.session_state["game_index"] = len(OYUN_SIRALAMASI) - 1
             
             st.rerun()
     
@@ -1210,856 +1340,968 @@ def game_interface():
 def kkd_leaderboard_interface():
     st.markdown("<h2>🏆 KKD Liderlik Tablosu</h2>", unsafe_allow_html=True)
     
-    stats, _, _, id_map = istatistikleri_hesapla()
-    if not stats:
-        st.warning("Henüz yeterli veri bulunmuyor.")
-        return
-    
-    # KKD sıralaması
-    data_list = []
-    for uid, s in stats.items():
-        name = id_map.get(uid, f"Bilinmeyen({uid})")
-        if s['mac_sayisi'] > 0:
-            wr = (s['pozitif_mac_sayisi'] / s['mac_sayisi'] * 100)
-            avg_score = s['toplam_puan'] / s['mac_sayisi']
-            data_list.append({
-                "Oyuncu": name,
-                "Maç": s['mac_sayisi'],
-                "KKD": int(s['kkd']),
-                "Win Rate": wr,
-                "Ortalama": avg_score,
-                "Seri": s['win_streak'],
-                "King": s.get('king_kazanma', 0)
-            })
-    
-    if not data_list:
-        st.warning("Oyuncu verisi bulunamadı.")
-        return
-    
-    df = pd.DataFrame(data_list).sort_values("KKD", ascending=False)
-    
-    # Filtreler
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        min_matches = st.slider("Minimum Maç Sayısı", 0, 100, 0, help="En az bu kadar maç yapanları göster")
-    
-    df_filtered = df[df['Maç'] >= min_matches]
-    
-    # Top 3 ödülleri
-    if len(df_filtered) >= 3:
-        st.markdown("""
-        <div style="display: flex; justify-content: center; gap: 20px; margin: 30px 0;">
-            <div style="text-align: center; background: linear-gradient(45deg, #FFD700, #FFA500); padding: 20px; border-radius: 15px; width: 120px;">
-                <h1 style="margin: 0; color: #000;">🥇</h1>
-                <h3 style="margin: 5px 0; color: #000;">{}</h3>
-                <p style="margin: 0; color: #000;">KKD: {}</p>
+    try:
+        stats, _, _, id_map = istatistikleri_hesapla()
+        if not stats:
+            st.warning("Henüz yeterli veri bulunmuyor.")
+            return
+        
+        # KKD sıralaması
+        data_list = []
+        for uid, s in stats.items():
+            name = id_map.get(uid, f"Bilinmeyen({uid})")
+            if s['mac_sayisi'] > 0:
+                wr = (s['pozitif_mac_sayisi'] / s['mac_sayisi'] * 100)
+                avg_score = s['toplam_puan'] / s['mac_sayisi']
+                data_list.append({
+                    "Oyuncu": name,
+                    "Maç": s['mac_sayisi'],
+                    "KKD": int(s['kkd']),
+                    "Win Rate": wr,
+                    "Ortalama": avg_score,
+                    "Seri": s['win_streak'],
+                    "King": s.get('king_kazanma', 0)
+                })
+        
+        if not data_list:
+            st.warning("Oyuncu verisi bulunamadı.")
+            return
+        
+        df = pd.DataFrame(data_list).sort_values("KKD", ascending=False)
+        
+        # Filtreler
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            min_matches = st.slider("Minimum Maç Sayısı", 0, 100, 0, help="En az bu kadar maç yapanları göster")
+        
+        df_filtered = df[df['Maç'] >= min_matches]
+        
+        # Top 3 ödülleri
+        if len(df_filtered) >= 3:
+            st.markdown("""
+            <div style="display: flex; justify-content: center; gap: 20px; margin: 30px 0;">
+                <div style="text-align: center; background: linear-gradient(45deg, #FFD700, #FFA500); padding: 20px; border-radius: 15px; width: 120px;">
+                    <h1 style="margin: 0; color: #000;">🥇</h1>
+                    <h3 style="margin: 5px 0; color: #000;">{}</h3>
+                    <p style="margin: 0; color: #000;">KKD: {}</p>
+                </div>
+                <div style="text-align: center; background: linear-gradient(45deg, #C0C0C0, #A0A0A0); padding: 20px; border-radius: 15px; width: 120px;">
+                    <h1 style="margin: 0; color: #000;">🥈</h1>
+                    <h3 style="margin: 5px 0; color: #000;">{}</h3>
+                    <p style="margin: 0; color: #000;">KKD: {}</p>
+                </div>
+                <div style="text-align: center; background: linear-gradient(45deg, #CD7F32, #A0522D); padding: 20px; border-radius: 15px; width: 120px;">
+                    <h1 style="margin: 0; color: #000;">🥉</h1>
+                    <h3 style="margin: 5px 0; color: #000;">{}</h3>
+                    <p style="margin: 0; color: #000;">KKD: {}</p>
+                </div>
             </div>
-            <div style="text-align: center; background: linear-gradient(45deg, #C0C0C0, #A0A0A0); padding: 20px; border-radius: 15px; width: 120px;">
-                <h1 style="margin: 0; color: #000;">🥈</h1>
-                <h3 style="margin: 5px 0; color: #000;">{}</h3>
-                <p style="margin: 0; color: #000;">KKD: {}</p>
-            </div>
-            <div style="text-align: center; background: linear-gradient(45deg, #CD7F32, #A0522D); padding: 20px; border-radius: 15px; width: 120px;">
-                <h1 style="margin: 0; color: #000;">🥉</h1>
-                <h3 style="margin: 5px 0; color: #000;">{}</h3>
-                <p style="margin: 0; color: #000;">KKD: {}</p>
-            </div>
-        </div>
-        """.format(
-            df_filtered.iloc[0]['Oyuncu'], df_filtered.iloc[0]['KKD'],
-            df_filtered.iloc[1]['Oyuncu'], df_filtered.iloc[1]['KKD'],
-            df_filtered.iloc[2]['Oyuncu'], df_filtered.iloc[2]['KKD']
-        ), unsafe_allow_html=True)
-    
-    # Detaylı tablo
-    st.subheader("📊 Detaylı Sıralama")
-    
-    # Formatlı gösterim
-    styled_df = df_filtered.style.format({
-        'KKD': '{:.0f}',
-        'Win Rate': '{:.1f}%',
-        'Ortalama': '{:.1f}',
-        'Seri': '{:.0f}',
-        'King': '{:.0f}'
-    })
-    
-    # Renklendirme
-    styled_df = styled_df.background_gradient(
-        subset=['KKD', 'Win Rate', 'Ortalama'],
-        cmap='RdYlGn'
-    )
-    
-    st.dataframe(
-        styled_df,
-        use_container_width=True,
-        height=min(600, 150 + len(df_filtered) * 35)
-    )
-    
-    # İstatistikler
-    st.subheader("📈 Genel İstatistikler")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        avg_kkd = df_filtered['KKD'].mean()
-        st.metric("Ortalama KKD", f"{avg_kkd:.0f}")
-    
-    with col2:
-        top_kkd = df_filtered['KKD'].max()
-        st.metric("En Yüksek KKD", f"{top_kkd:.0f}")
-    
-    with col3:
-        avg_wr = df_filtered['Win Rate'].mean()
-        st.metric("Ortalama Win Rate", f"{avg_wr:.1f}%")
-    
-    with col4:
-        total_matches = df_filtered['Maç'].sum()
-        st.metric("Toplam Maç", f"{total_matches}")
+            """.format(
+                df_filtered.iloc[0]['Oyuncu'], df_filtered.iloc[0]['KKD'],
+                df_filtered.iloc[1]['Oyuncu'], df_filtered.iloc[1]['KKD'],
+                df_filtered.iloc[2]['Oyuncu'], df_filtered.iloc[2]['KKD']
+            ), unsafe_allow_html=True)
+        
+        # Detaylı tablo
+        st.subheader("📊 Detaylı Sıralama")
+        
+        # Formatlı gösterim
+        styled_df = df_filtered.style.format({
+            'KKD': '{:.0f}',
+            'Win Rate': '{:.1f}%',
+            'Ortalama': '{:.1f}',
+            'Seri': '{:.0f}',
+            'King': '{:.0f}'
+        })
+        
+        # Renklendirme
+        styled_df = styled_df.background_gradient(
+            subset=['KKD', 'Win Rate', 'Ortalama'],
+            cmap='RdYlGn'
+        )
+        
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            height=min(600, 150 + len(df_filtered) * 35)
+        )
+        
+        # İstatistikler
+        st.subheader("📈 Genel İstatistikler")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            avg_kkd = df_filtered['KKD'].mean()
+            st.metric("Ortalama KKD", f"{avg_kkd:.0f}")
+        
+        with col2:
+            top_kkd = df_filtered['KKD'].max()
+            st.metric("En Yüksek KKD", f"{top_kkd:.0f}")
+        
+        with col3:
+            avg_wr = df_filtered['Win Rate'].mean()
+            st.metric("Ortalama Win Rate", f"{avg_wr:.1f}%")
+        
+        with col4:
+            total_matches = df_filtered['Maç'].sum()
+            st.metric("Toplam Maç", f"{total_matches}")
+    except Exception as e:
+        st.error(f"KKD liderlik tablosu yüklenirken hata oluştu: {str(e)}")
 
 def stats_interface():
     st.markdown("<h2>📊 İstatistik Merkezi</h2>", unsafe_allow_html=True)
     
-    stats, match_hist, chrono_matches, id_map = istatistikleri_hesapla()
-    if not stats:
-        st.warning("Henüz tamamlanmış maç verisi bulunmuyor.")
-        return
-    
-    # Ana veri yapısı
-    rows = []
-    for uid, s in stats.items():
-        if s['mac_sayisi'] == 0:
-            continue
-            
-        name = id_map.get(uid, f"Bilinmeyen({uid})")
-        row = s.copy()
-        row['Oyuncu'] = name
-        row['averaj'] = row['toplam_puan'] / row['mac_sayisi']
-        row['win_rate'] = (row['pozitif_mac_sayisi'] / row['mac_sayisi']) * 100
-        row['king_orani'] = (row.get('king_kazanma', 0) / max(row.get('king_sayisi', 1), 1)) * 100
-        
-        # Ceza oranları
-        total_ceza = sum(row['cezalar'].values())
-        row['ceza_ort'] = total_ceza / row['mac_sayisi'] if row['mac_sayisi'] > 0 else 0
-        
-        rows.append(row)
-    
-    if not rows:
-        st.warning("İşlenebilir veri bulunamadı.")
-        return
-    
-    df_main = pd.DataFrame(rows).set_index("Oyuncu")
-    
-    # Sekmeler
-    tabs = st.tabs([
-        "🔥 Seriler", "⚖️ Averaj", "📅 Rewind", 
-        "🏆 Genel", "📜 Arşiv", "🚫 Cezalar", "🤝 Komandit"
-    ])
-    
-    # 1. SERİLER
-    with tabs[0]:
-        st.subheader("🔥 En Uzun Kazanma/Kaybetme Serileri")
-        
-        # En iyi seriler
-        col1, col2 = st.columns(2)
-        with col1:
-            best_win = df_main['max_win_streak'].idxmax()
-            best_win_val = df_main.loc[best_win, 'max_win_streak']
-            st.success(f"""
-            **🚀 En İyi Seri: {best_win}**
-            {best_win_val} maç üst üste kazanma!
-            """)
-            
-            # Aktif seriler
-            st.subheader("⚡ Aktif Seriler")
-            active_wins = df_main[df_main['win_streak'] > 0].sort_values('win_streak', ascending=False)
-            if not active_wins.empty:
-                for player, row in active_wins.head(5).iterrows():
-                    st.write(f"**{player}**: {int(row['win_streak'])} maç kazanma serisi")
-        
-        with col2:
-            worst_loss = df_main['max_loss_streak'].idxmax()
-            worst_loss_val = df_main.loc[worst_loss, 'max_loss_streak']
-            st.error(f"""
-            **💀 En Kötü Seri: {worst_loss}**
-            {worst_loss_val} maç üst üste kaybetme!
-            """)
-            
-            # Aktif kaybetme serileri
-            active_losses = df_main[df_main['loss_streak'] > 0].sort_values('loss_streak', ascending=False)
-            if not active_losses.empty:
-                for player, row in active_losses.head(5).iterrows():
-                    st.write(f"**{player}**: {int(row['loss_streak'])} maç kaybetme serisi")
-        
-        # Detaylı tablo
-        st.subheader("📊 Seri İstatistikleri")
-        display_df = df_main[['win_streak', 'max_win_streak', 'loss_streak', 'max_loss_streak']].copy()
-        display_df.columns = ['Aktif Kazanma', 'En İyi Seri', 'Aktif Kaybetme', 'En Kötü Seri']
-        
-        st.dataframe(
-            display_df.sort_values('En İyi Seri', ascending=False).style.format("{:.0f}"),
-            use_container_width=True
-        )
-    
-    # 2. AVERAJ
-    with tabs[1]:
-        st.subheader("⚖️ Averaj Liderlik (Ortalama Puan)")
-        
-        # En iyi 5
-        top_avg = df_main.sort_values('averaj', ascending=False).head(10)
-        
-        # Grafik
-        st.bar_chart(top_avg['averaj'])
-        
-        # Detaylı tablo
-        disp = df_main[['mac_sayisi', 'toplam_puan', 'averaj', 'win_rate']].sort_values('averaj', ascending=False)
-        disp.columns = ["Maç Sayısı", "Toplam Puan", "Ortalama", "Win Rate %"]
-        
-        st.dataframe(
-            disp.style.format({
-                'Ortalama': '{:.1f}',
-                'Win Rate %': '{:.1f}%'
-            }).background_gradient(subset=['Ortalama'], cmap='RdYlGn'),
-            use_container_width=True
-        )
-    
-    # 3. REWIND - DÜZELTİLMİŞ
-    with tabs[2]:
-        st.subheader("📅 Zaman Tüneli - Dönemsel Analiz")
-        
-        if not chrono_matches:
-            st.info("Tarih verisi bulunmuyor.")
+    try:
+        stats, match_hist, chrono_matches, id_map = istatistikleri_hesapla()
+        if not stats:
+            st.warning("Henüz tamamlanmış maç verisi bulunmuyor.")
             return
         
-        # Filtreler
-        dates = sorted([m['tarih'] for m in chrono_matches], reverse=True)
-        years = sorted(list(set([d.year for d in dates])), reverse=True)
-        months = list(range(1, 13))
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            selected_year = st.selectbox("Yıl Seç", ["Tüm Zamanlar"] + years)
-        with col2:
-            selected_month = st.selectbox("Ay Seç", ["Tümü"] + months)
-        with col3:
-            show_type = st.selectbox("Oyun Tipi", ["Tümü", "Normal", "KING"])
-        
-        # Maçları filtrele
-        filtered_matches = []
-        for m in chrono_matches:
-            d = m['tarih']
-            
-            # Yıl filtresi
-            if selected_year != "Tüm Zamanlar" and d.year != selected_year:
-                continue
-            
-            # Ay filtresi
-            if selected_month != "Tümü" and d.month != selected_month:
-                continue
-            
-            # Oyun tipi filtresi
-            if show_type != "Tümü" and m.get('oyun_tipi') != show_type:
-                continue
-            
-            filtered_matches.append(m)
-        
-        if not filtered_matches:
-            st.warning("Seçilen kriterlere uygun maç bulunamadı.")
-            return
-        
-        # İstatistikleri hesapla
-        period_stats = {}
-        
-        for match in filtered_matches:
-            # Tarih için ay-yıl anahtarı
-            month_key = match['tarih'].strftime("%Y-%m")
-            
-            for uid in match.get('ids', []):
-                if uid not in id_map:
-                    continue
-                    
-                if uid not in period_stats:
-                    period_stats[uid] = {
-                        'isim': id_map[uid],
-                        'matches': 0,
-                        'wins': 0,
-                        'total_score': 0,
-                        'cezalar': defaultdict(int),
-                        'king_wins': 0,
-                        'king_games': 0,
-                        'monthly': defaultdict(lambda: {'matches': 0, 'wins': 0, 'score': 0})
-                    }
-                
-                ps = period_stats[uid]
-                ps['matches'] += 1
-                
-                # Skor ve kazanma durumu
-                score = match.get('sonuclar', {}).get(uid, 0)
-                ps['total_score'] += score
-                
-                is_winner = uid in match.get('kazananlar', [])
-                if is_winner:
-                    ps['wins'] += 1
-                
-                # King istatistikleri
-                if match.get('oyun_tipi') == 'KING':
-                    ps['king_games'] += 1
-                    if uid == match.get('king_winner'):
-                        ps['king_wins'] += 1
-                
-                # Ceza istatistikleri - DÜZELTİLMİŞ
-                if uid in match.get('ceza_detaylari', {}):
-                    for ceza_type, count in match['ceza_detaylari'][uid].items():
-                        ps['cezalar'][ceza_type] += count
-                
-                # Aylık istatistikler
-                ps['monthly'][month_key]['matches'] += 1
-                ps['monthly'][month_key]['score'] += score
-                if is_winner:
-                    ps['monthly'][month_key]['wins'] += 1
-        
-        # En iyi performans
-        if period_stats:
-            # En çok kazanan
-            most_wins = max(period_stats.items(), key=lambda x: x[1]['wins'])
-            best_player = most_wins[1]['isim']
-            win_rate = (most_wins[1]['wins'] / most_wins[1]['matches'] * 100) if most_wins[1]['matches'] > 0 else 0
-            
-            st.success(f"""
-            **👑 Dönem Kralı: {best_player}**
-            {most_wins[1]['wins']} kazanma / {most_wins[1]['matches']} maç (%{win_rate:.1f})
-            """)
-            
-            # En çok ceza alan
-            most_penalties = max(period_stats.items(), 
-                               key=lambda x: sum(x[1]['cezalar'].values()))
-            worst_player = most_penalties[1]['isim']
-            total_penalties = sum(most_penalties[1]['cezalar'].values())
-            
-            st.error(f"""
-            **🚫 Ceza Kralı: {worst_player}**
-            Toplam {total_penalties} ceza
-            """)
-            
-            # Ceza dağılımı
-            st.subheader("🚫 Ceza Dağılımı")
-            
-            # Tüm cezaları topla
-            all_penalties = defaultdict(int)
-            for uid, data in period_stats.items():
-                for ceza_type, count in data['cezalar'].items():
-                    all_penalties[ceza_type] += count
-            
-            if all_penalties:
-                # Bar chart for penalties
-                st.bar_chart(pd.Series(all_penalties))
-            
-            # Detaylı tablo
-            st.subheader("📊 Dönemsel Performans")
-            
-            table_data = []
-            for uid, data in period_stats.items():
-                if data['matches'] > 0:
-                    win_rate = (data['wins'] / data['matches']) * 100
-                    avg_score = data['total_score'] / data['matches']
-                    total_penalties = sum(data['cezalar'].values())
-                    
-                    table_data.append({
-                        'Oyuncu': data['isim'],
-                        'Maç': data['matches'],
-                        'Kazanma': data['wins'],
-                        'Win Rate %': win_rate,
-                        'Ortalama': avg_score,
-                        'Toplam Ceza': total_penalties,
-                        'King Kazanma': data['king_wins']
-                    })
-            
-            if table_data:
-                df_period = pd.DataFrame(table_data).sort_values('Win Rate %', ascending=False)
-                
-                st.dataframe(
-                    df_period.style.format({
-                        'Win Rate %': '{:.1f}%',
-                        'Ortalama': '{:.1f}'
-                    }).background_gradient(subset=['Win Rate %', 'Ortalama'], cmap='RdYlGn'),
-                    use_container_width=True
-                )
-    
-    # 4. GENEL
-    with tabs[3]:
-        st.subheader("🏆 Genel İstatistikler")
-        
-        # Özet metrikler
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            total_matches = df_main['mac_sayisi'].sum()
-            st.metric("Toplam Maç", total_matches)
-        
-        with col2:
-            total_players = len(df_main)
-            st.metric("Toplam Oyuncu", total_players)
-        
-        with col3:
-            avg_wins = df_main['pozitif_mac_sayisi'].sum() / total_matches * 100
-            st.metric("Genel Win Rate", f"{avg_wins:.1f}%")
-        
-        with col4:
-            total_kings = df_main['king_sayisi'].sum()
-            st.metric("Toplam King", total_kings)
-        
-        # En iyiler
-        st.subheader("🎖️ Ödüller")
-        
-        awards_cols = st.columns(3)
-        
-        with awards_cols[0]:
-            # En yüksek KKD
-            top_kkd = df_main.nlargest(1, 'kkd')
-            if not top_kkd.empty:
-                player = top_kkd.index[0]
-                kkd = top_kkd.iloc[0]['kkd']
-                st.markdown(f"""
-                <div class="custom-card">
-                    <h4>🥇 En Yüksek KKD</h4>
-                    <h2 style="color: #FFD700;">{player}</h2>
-                    <p>KKD: {int(kkd)}</p>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        with awards_cols[1]:
-            # En çok kazanan
-            most_wins = df_main.nlargest(1, 'pozitif_mac_sayisi')
-            if not most_wins.empty:
-                player = most_wins.index[0]
-                wins = most_wins.iloc[0]['pozitif_mac_sayisi']
-                total = most_wins.iloc[0]['mac_sayisi']
-                st.markdown(f"""
-                <div class="custom-card">
-                    <h4>👑 En Çok Kazanan</h4>
-                    <h2 style="color: #FFD700;">{player}</h2>
-                    <p>{wins} kazanma / {total} maç</p>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        with awards_cols[2]:
-            # En iyi King
-            king_players = df_main[df_main['king_sayisi'] > 0].copy()
-            if not king_players.empty:
-                king_players['king_rate'] = king_players['king_kazanma'] / king_players['king_sayisi']
-                best_king = king_players.nlargest(1, 'king_rate')
-                if not best_king.empty:
-                    player = best_king.index[0]
-                    rate = best_king.iloc[0]['king_rate'] * 100
-                    st.markdown(f"""
-                    <div class="custom-card">
-                        <h4>🤴 King Ustası</h4>
-                        <h2 style="color: #FFD700;">{player}</h2>
-                        <p>%{rate:.1f} King kazanma</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-        # Detaylı tablo
-        st.subheader("📈 Tüm İstatistikler")
-        
-        display_cols = ['mac_sayisi', 'pozitif_mac_sayisi', 'toplam_puan', 'kkd', 
-                        'averaj', 'win_streak', 'king_kazanma']
-        
-        display_df = df_main[display_cols].copy()
-        display_df.columns = ['Maç', 'Kazanma', 'Toplam Puan', 'KKD', 
-                             'Ortalama', 'Aktif Seri', 'King Kazanma']
-        
-        # Sıralama seçeneği
-        sort_by = st.selectbox("Sıralama Ölçütü", 
-                              ['KKD', 'Ortalama', 'Maç', 'Kazanma', 'Aktif Seri'])
-        
-        st.dataframe(
-            display_df.sort_values(sort_by, ascending=False)
-            .style.format({
-                'KKD': '{:.0f}',
-                'Ortalama': '{:.1f}'
-            })
-            .background_gradient(subset=['KKD', 'Ortalama'], cmap='RdYlGn'),
-            use_container_width=True
-        )
-    
-    # 5. ARŞİV
-    with tabs[4]:
-        st.subheader("📜 Maç Arşivi")
-        
-        if not match_hist:
-            st.info("Henüz maç kaydı bulunmuyor.")
-            return
-        
-        # Maç seçimi
-        match_titles = [m['baslik'].replace("--- MAÇ: ", "").replace(" ---", "") 
-                        for m in match_hist[::-1]]
-        
-        selected_match = st.selectbox("Maç Seçin:", match_titles)
-        
-        # Seçilen maçı bul
-        selected_full = f"--- MAÇ: {selected_match} ---"
-        found_match = next((m for m in match_hist if m['baslik'] == selected_full), None)
-        
-        if found_match:
-            # Maç bilgileri
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("Tarih", found_match['tarih'].strftime("%d.%m.%Y"))
-            
-            with col2:
-                st.metric("Oyun Tipi", found_match.get('oyun_tipi', 'Normal'))
-            
-            with col3:
-                if found_match.get('oyun_tipi') == 'KING':
-                    winner = found_match.get('king_winner')
-                    if winner:
-                        winner_name = id_map.get(winner, 'Bilinmeyen')
-                        st.metric("King Kazanan", winner_name)
-            
-            # Skor tablosu
-            st.subheader("📊 Maç Detayları")
-            
-            # Skorları DataFrame'e dönüştür
-            score_rows = []
-            for score_row in found_match['skorlar']:
-                row_dict = {'OYUN': score_row[0]}
-                for i, player in enumerate(found_match['oyuncular']):
-                    if i + 1 < len(score_row):
-                        row_dict[player] = score_row[i + 1]
-                score_rows.append(row_dict)
-            
-            if score_rows:
-                scores_df = pd.DataFrame(score_rows)
-                
-                # Toplam satırını ekle
-                total_row = {'OYUN': 'TOPLAM'}
-                for i, player in enumerate(found_match['oyuncular']):
-                    if i + 1 < len(found_match['toplamlar']):
-                        total_row[player] = found_match['toplamlar'][i + 1]
-                
-                scores_df = pd.concat([scores_df, pd.DataFrame([total_row])], ignore_index=True)
-                
-                # Renklendirme
-                def color_negative_red(val):
-                    try:
-                        num = float(val)
-                        if num < 0:
-                            color = '#ff6b6b'
-                        elif num > 0:
-                            color = '#06d6a0'
-                        else:
-                            color = 'white'
-                        return f'color: {color}; font-weight: bold;'
-                    except:
-                        return ''
-                
-                st.dataframe(
-                    scores_df.style.applymap(color_negative_red, subset=found_match['oyuncular'])
-                    .set_properties(**{'text-align': 'center'}),
-                    use_container_width=True
-                )
-            
-            # Ceza detayları
-            if found_match.get('ceza_detaylari'):
-                st.subheader("🚫 Ceza Detayları")
-                
-                penalty_data = []
-                for uid, penalties in found_match['ceza_detaylari'].items():
-                    player_name = id_map.get(uid, f"Bilinmeyen({uid})")
-                    for ceza_type, count in penalties.items():
-                        if count > 0:
-                            penalty_data.append({
-                                'Oyuncu': player_name,
-                                'Ceza Türü': ceza_type,
-                                'Sayı': count,
-                                'Toplam Puan': count * OYUN_KURALLARI.get(ceza_type, {}).get('puan', 0)
-                            })
-                
-                if penalty_data:
-                    penalty_df = pd.DataFrame(penalty_data)
-                    st.dataframe(
-                        penalty_df.sort_values('Toplam Puan').style.format({
-                            'Toplam Puan': '{:.0f}'
-                        }),
-                        use_container_width=True
-                    )
-    
-    # 6. CEZALAR - DÜZELTİLMİŞ
-    with tabs[5]:
-        st.subheader("🚫 Ceza İstatistikleri")
-        
-        # Ceza verilerini hazırla
-        ceza_data = []
-        
+        # Ana veri yapısı
+        rows = []
         for uid, s in stats.items():
             if s['mac_sayisi'] == 0:
                 continue
                 
-            player_name = id_map.get(uid, f"Bilinmeyen({uid})")
+            name = id_map.get(uid, f"Bilinmeyen({uid})")
+            row = s.copy()
+            row['Oyuncu'] = name
+            row['averaj'] = row['toplam_puan'] / row['mac_sayisi']
+            row['win_rate'] = (row['pozitif_mac_sayisi'] / row['mac_sayisi']) * 100
+            row['king_orani'] = (row.get('king_kazanma', 0) / max(row.get('king_sayisi', 1), 1)) * 100
             
-            # Toplam ceza sayısı
-            total_penalties = sum(s['cezalar'].values())
+            # Ceza oranları
+            total_ceza = sum(row['cezalar'].values())
+            row['ceza_ort'] = total_ceza / row['mac_sayisi'] if row['mac_sayisi'] > 0 else 0
             
-            if total_penalties > 0:
-                row = {'Oyuncu': player_name, 'Maç': s['mac_sayisi'], 'Toplam Ceza': total_penalties}
-                
-                # Her ceza türü için
-                for ceza_type in OYUN_KURALLARI:
-                    count = s['cezalar'].get(ceza_type, 0)
-                    # Maç başına ortalama
-                    avg_per_match = count / s['mac_sayisi'] if s['mac_sayisi'] > 0 else 0
-                    row[ceza_type] = f"{count} ({avg_per_match:.2f})"
-                
-                ceza_data.append(row)
+            rows.append(row)
         
-        if ceza_data:
-            ceza_df = pd.DataFrame(ceza_data).set_index('Oyuncu')
-            
-            # En çok ceza alanlar
-            st.subheader("🏆 Ceza Liderleri")
-            
-            top_penalty = ceza_df.nlargest(5, 'Toplam Ceza')[['Toplam Ceza', 'Maç']]
-            st.dataframe(
-                top_penalty.style.background_gradient(subset=['Toplam Ceza'], cmap='Reds'),
-                use_container_width=True
-            )
-            
-            # Ceza türlerine göre dağılım
-            st.subheader("📊 Ceza Türü Dağılımı")
-            
-            # Grafik için veri hazırla
-            penalty_types = []
-            penalty_counts = []
-            colors = []
-            
-            for uid, s in stats.items():
-                if s['mac_sayisi'] > 0:
-                    for ceza_type, count in s['cezalar'].items():
-                        if count > 0:
-                            penalty_types.append(ceza_type)
-                            penalty_counts.append(count)
-                            colors.append(OYUN_KURALLARI.get(ceza_type, {}).get('renk', '#FF0000'))
-            
-            if penalty_counts:
-                # Bar chart
-                st.bar_chart(pd.Series(penalty_counts, index=penalty_types))
-            
-            # Detaylı tablo
-            st.subheader("📋 Detaylı Ceza Karnesi")
-            
-            # Sadece sayısal değerleri göster
-            display_cols = ['Maç', 'Toplam Ceza'] + list(OYUN_KURALLARI.keys())
-            display_df = ceza_df[display_cols].sort_values('Toplam Ceza', ascending=False)
-            
-            st.dataframe(
-                display_df.style.background_gradient(subset=['Toplam Ceza'], cmap='Reds'),
-                use_container_width=True,
-                height=min(600, 150 + len(display_df) * 35)
-            )
-        else:
-            st.info("Henüz ceza kaydı bulunmuyor.")
-    
-    # 7. KOMANDİT
-    with tabs[6]:
-        st.subheader("🤝 Partner Performans Analizi")
+        if not rows:
+            st.warning("İşlenebilir veri bulunamadı.")
+            return
         
-        current_user_id = st.session_state.get("user_id")
+        df_main = pd.DataFrame(rows).set_index("Oyuncu")
         
-        if current_user_id and current_user_id in stats:
-            user_stats = stats[current_user_id]
-            user_name = id_map.get(current_user_id, "Bilinmeyen")
+        # Sekmeler
+        tabs = st.tabs([
+            "🔥 Seriler", "⚖️ Averaj", "📅 Rewind", 
+            "🏆 Genel", "📜 Arşiv", "🚫 Cezalar", "🤝 Komandit"
+        ])
+        
+        # 1. SERİLER
+        with tabs[0]:
+            st.subheader("🔥 En Uzun Kazanma/Kaybetme Serileri")
             
-            st.markdown(f"**{user_name}** için partner analizi:")
-            
-            partner_data = []
-            
-            for partner_id, partner_stats in user_stats.get('partnerler', {}).items():
-                partner_name = id_map.get(partner_id, f"Bilinmeyen({partner_id})")
-                matches_together = partner_stats.get('birlikte_mac', 0)
-                wins_together = partner_stats.get('beraber_kazanma', 0)
-                
-                if matches_together > 0:
-                    win_rate = (wins_together / matches_together) * 100
-                    
-                    partner_data.append({
-                        'Partner': partner_name,
-                        'Birlikte Maç': matches_together,
-                        'Birlikte Kazanma': wins_together,
-                        'Win Rate %': win_rate,
-                        'Başarı': 'Yüksek' if win_rate > 60 else ('Orta' if win_rate > 40 else 'Düşük')
-                    })
-            
-            if partner_data:
-                partner_df = pd.DataFrame(partner_data).sort_values('Win Rate %', ascending=False)
-                
-                # En iyi partner
-                best_partner = partner_df.iloc[0]
+            # En iyi seriler
+            col1, col2 = st.columns(2)
+            with col1:
+                best_win = df_main['max_win_streak'].idxmax()
+                best_win_val = df_main.loc[best_win, 'max_win_streak']
                 st.success(f"""
-                **🤝 En İyi Partner: {best_partner['Partner']}**
-                {best_partner['Birlikte Kazanma']} kazanma / {best_partner['Birlikte Maç']} maç
-                (%{best_partner['Win Rate %']:.1f} başarı)
+                **🚀 En İyi Seri: {best_win}**
+                {best_win_val} maç üst üste kazanma!
                 """)
                 
-                # Tablo
+                # Aktif seriler
+                st.subheader("⚡ Aktif Seriler")
+                active_wins = df_main[df_main['win_streak'] > 0].sort_values('win_streak', ascending=False)
+                if not active_wins.empty:
+                    for player, row in active_wins.head(5).iterrows():
+                        st.write(f"**{player}**: {int(row['win_streak'])} maç kazanma serisi")
+            
+            with col2:
+                worst_loss = df_main['max_loss_streak'].idxmax()
+                worst_loss_val = df_main.loc[worst_loss, 'max_loss_streak']
+                st.error(f"""
+                **💀 En Kötü Seri: {worst_loss}**
+                {worst_loss_val} maç üst üste kaybetme!
+                """)
+                
+                # Aktif kaybetme serileri
+                active_losses = df_main[df_main['loss_streak'] > 0].sort_values('loss_streak', ascending=False)
+                if not active_losses.empty:
+                    for player, row in active_losses.head(5).iterrows():
+                        st.write(f"**{player}**: {int(row['loss_streak'])} maç kaybetme serisi")
+            
+            # Detaylı tablo
+            st.subheader("📊 Seri İstatistikleri")
+            display_df = df_main[['win_streak', 'max_win_streak', 'loss_streak', 'max_loss_streak']].copy()
+            display_df.columns = ['Aktif Kazanma', 'En İyi Seri', 'Aktif Kaybetme', 'En Kötü Seri']
+            
+            st.dataframe(
+                display_df.sort_values('En İyi Seri', ascending=False).style.format("{:.0f}"),
+                use_container_width=True
+            )
+        
+        # 2. AVERAJ
+        with tabs[1]:
+            st.subheader("⚖️ Averaj Liderlik (Ortalama Puan)")
+            
+            # En iyi 5
+            top_avg = df_main.sort_values('averaj', ascending=False).head(10)
+            
+            # Grafik
+            if HAS_MATPLOTLIB and not top_avg.empty:
+                try:
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    bars = ax.bar(range(len(top_avg)), top_avg['averaj'], 
+                                 color=['#FFD700', '#C0C0C0', '#CD7F32'] + ['#28a745'] * 7)
+                    
+                    # Değerleri üzerine yaz
+                    for i, (idx, row) in enumerate(top_avg.iterrows()):
+                        ax.text(i, row['averaj'] + 0.5, f"{row['averaj']:.1f}", 
+                               ha='center', va='bottom', fontweight='bold')
+                    
+                    ax.set_xticks(range(len(top_avg)))
+                    ax.set_xticklabels(top_avg.index, rotation=45, ha='right')
+                    ax.set_ylabel('Ortalama Puan')
+                    ax.set_title('En Yüksek Ortalamaya Sahip Oyuncular')
+                    ax.grid(True, alpha=0.3)
+                    
+                    st.pyplot(fig)
+                    plt.close(fig)
+                except Exception as e:
+                    st.warning(f"Grafik oluşturulamadı: {str(e)}")
+            
+            # Detaylı tablo
+            disp = df_main[['mac_sayisi', 'toplam_puan', 'averaj', 'win_rate']].sort_values('averaj', ascending=False)
+            disp.columns = ["Maç Sayısı", "Toplam Puan", "Ortalama", "Win Rate %"]
+            
+            st.dataframe(
+                disp.style.format({
+                    'Ortalama': '{:.1f}',
+                    'Win Rate %': '{:.1f}%'
+                }).background_gradient(subset=['Ortalama'], cmap='RdYlGn'),
+                use_container_width=True
+            )
+        
+        # 3. REWIND
+        with tabs[2]:
+            st.subheader("📅 Zaman Tüneli - Dönemsel Analiz")
+            
+            if not chrono_matches:
+                st.info("Tarih verisi bulunmuyor.")
+                return
+            
+            # Filtreler
+            dates = sorted([m['tarih'] for m in chrono_matches], reverse=True)
+            years = sorted(list(set([d.year for d in dates])), reverse=True)
+            months = list(range(1, 13))
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                selected_year = st.selectbox("Yıl Seç", ["Tümü"] + years, key="year_select")
+            with col2:
+                selected_month = st.selectbox("Ay Seç", ["Tümü"] + months, key="month_select")
+            with col3:
+                show_type = st.selectbox("Oyun Tipi", ["Tümü", "Normal", "KING"], key="type_select")
+            
+            # Maçları filtrele
+            filtered_matches = []
+            for m in chrono_matches:
+                d = m['tarih']
+                
+                # Yıl filtresi
+                if selected_year != "Tümü" and d.year != selected_year:
+                    continue
+                
+                # Ay filtresi
+                if selected_month != "Tümü" and d.month != selected_month:
+                    continue
+                
+                # Oyun tipi filtresi
+                if show_type != "Tümü" and m.get('oyun_tipi') != show_type:
+                    continue
+                
+                filtered_matches.append(m)
+            
+            if not filtered_matches:
+                st.warning("Seçilen kriterlere uygun maç bulunamadı.")
+                return
+            
+            # İstatistikleri hesapla
+            period_stats = {}
+            
+            for match in filtered_matches:
+                # Tarih için ay-yıl anahtarı
+                month_key = match['tarih'].strftime("%Y-%m")
+                
+                for uid in match.get('ids', []):
+                    if uid not in id_map:
+                        continue
+                        
+                    if uid not in period_stats:
+                        period_stats[uid] = {
+                            'isim': id_map[uid],
+                            'matches': 0,
+                            'wins': 0,
+                            'total_score': 0,
+                            'cezalar': defaultdict(int),
+                            'king_wins': 0,
+                            'king_games': 0,
+                            'monthly': defaultdict(lambda: {'matches': 0, 'wins': 0, 'score': 0})
+                        }
+                    
+                    ps = period_stats[uid]
+                    ps['matches'] += 1
+                    
+                    # Skor ve kazanma durumu
+                    score = match.get('sonuclar', {}).get(uid, 0)
+                    ps['total_score'] += score
+                    
+                    is_winner = uid in match.get('kazananlar', [])
+                    if is_winner:
+                        ps['wins'] += 1
+                    
+                    # King istatistikleri
+                    if match.get('oyun_tipi') == 'KING':
+                        ps['king_games'] += 1
+                        if uid == match.get('king_winner'):
+                            ps['king_wins'] += 1
+                    
+                    # Ceza istatistikleri
+                    if uid in match.get('ceza_detaylari', {}):
+                        for ceza_type, count in match['ceza_detaylari'][uid].items():
+                            ps['cezalar'][ceza_type] += count
+                    
+                    # Aylık istatistikler
+                    ps['monthly'][month_key]['matches'] += 1
+                    ps['monthly'][month_key]['score'] += score
+                    if is_winner:
+                        ps['monthly'][month_key]['wins'] += 1
+            
+            # En iyi performans
+            if period_stats:
+                # En çok kazanan
+                most_wins = max(period_stats.items(), key=lambda x: x[1]['wins'])
+                best_player = most_wins[1]['isim']
+                win_rate = (most_wins[1]['wins'] / most_wins[1]['matches'] * 100) if most_wins[1]['matches'] > 0 else 0
+                
+                st.success(f"""
+                **👑 Dönem Kralı: {best_player}**
+                {most_wins[1]['wins']} kazanma / {most_wins[1]['matches']} maç (%{win_rate:.1f})
+                """)
+                
+                # En çok ceza alan
+                most_penalties = max(period_stats.items(), 
+                                   key=lambda x: sum(x[1]['cezalar'].values()))
+                worst_player = most_penalties[1]['isim']
+                total_penalties = sum(most_penalties[1]['cezalar'].values())
+                
+                st.error(f"""
+                **🚫 Ceza Kralı: {worst_player}**
+                Toplam {total_penalties} ceza
+                """)
+                
+                # Ceza dağılımı
+                st.subheader("🚫 Ceza Dağılımı")
+                
+                # Tüm cezaları topla
+                all_penalties = defaultdict(int)
+                for uid, data in period_stats.items():
+                    for ceza_type, count in data['cezalar'].items():
+                        all_penalties[ceza_type] += count
+                
+                if all_penalties and HAS_MATPLOTLIB:
+                    try:
+                        # Pie chart
+                        fig, ax = plt.subplots(figsize=(8, 8))
+                        
+                        labels = list(all_penalties.keys())
+                        sizes = list(all_penalties.values())
+                        colors = [OYUN_KURALLARI.get(k, {}).get('renk', '#FF0000') for k in labels]
+                        
+                        ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%',
+                              startangle=90, wedgeprops={'edgecolor': 'white'})
+                        ax.set_title('Ceza Türlerine Göre Dağılım')
+                        
+                        st.pyplot(fig)
+                        plt.close(fig)
+                    except Exception as e:
+                        st.warning(f"Grafik oluşturulamadı: {str(e)}")
+                
+                # Detaylı tablo
+                st.subheader("📊 Dönemsel Performans")
+                
+                table_data = []
+                for uid, data in period_stats.items():
+                    if data['matches'] > 0:
+                        win_rate = (data['wins'] / data['matches']) * 100
+                        avg_score = data['total_score'] / data['matches']
+                        total_penalties = sum(data['cezalar'].values())
+                        
+                        table_data.append({
+                            'Oyuncu': data['isim'],
+                            'Maç': data['matches'],
+                            'Kazanma': data['wins'],
+                            'Win Rate %': win_rate,
+                            'Ortalama': avg_score,
+                            'Toplam Ceza': total_penalties,
+                            'King Kazanma': data['king_wins']
+                        })
+                
+                if table_data:
+                    df_period = pd.DataFrame(table_data).sort_values('Win Rate %', ascending=False)
+                    
+                    st.dataframe(
+                        df_period.style.format({
+                            'Win Rate %': '{:.1f}%',
+                            'Ortalama': '{:.1f}'
+                        }).background_gradient(subset=['Win Rate %', 'Ortalama'], cmap='RdYlGn'),
+                        use_container_width=True
+                    )
+        
+        # 4. GENEL
+        with tabs[3]:
+            st.subheader("🏆 Genel İstatistikler")
+            
+            # Özet metrikler
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                total_matches = df_main['mac_sayisi'].sum()
+                st.metric("Toplam Maç", total_matches)
+            
+            with col2:
+                total_players = len(df_main)
+                st.metric("Toplam Oyuncu", total_players)
+            
+            with col3:
+                avg_wins = df_main['pozitif_mac_sayisi'].sum() / total_matches * 100
+                st.metric("Genel Win Rate", f"{avg_wins:.1f}%")
+            
+            with col4:
+                total_kings = df_main['king_sayisi'].sum()
+                st.metric("Toplam King", total_kings)
+            
+            # En iyiler
+            st.subheader("🎖️ Ödüller")
+            
+            awards_cols = st.columns(3)
+            
+            with awards_cols[0]:
+                # En yüksek KKD
+                top_kkd = df_main.nlargest(1, 'kkd')
+                if not top_kkd.empty:
+                    player = top_kkd.index[0]
+                    kkd = top_kkd.iloc[0]['kkd']
+                    st.markdown(f"""
+                    <div class="custom-card">
+                        <h4>🥇 En Yüksek KKD</h4>
+                        <h2 style="color: #FFD700;">{player}</h2>
+                        <p>KKD: {int(kkd)}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with awards_cols[1]:
+                # En çok kazanan
+                most_wins = df_main.nlargest(1, 'pozitif_mac_sayisi')
+                if not most_wins.empty:
+                    player = most_wins.index[0]
+                    wins = most_wins.iloc[0]['pozitif_mac_sayisi']
+                    total = most_wins.iloc[0]['mac_sayisi']
+                    st.markdown(f"""
+                    <div class="custom-card">
+                        <h4>👑 En Çok Kazanan</h4>
+                        <h2 style="color: #FFD700;">{player}</h2>
+                        <p>{wins} kazanma / {total} maç</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with awards_cols[2]:
+                # En iyi King
+                king_players = df_main[df_main['king_sayisi'] > 0].copy()
+                if not king_players.empty:
+                    king_players['king_rate'] = king_players['king_kazanma'] / king_players['king_sayisi']
+                    best_king = king_players.nlargest(1, 'king_rate')
+                    if not best_king.empty:
+                        player = best_king.index[0]
+                        rate = best_king.iloc[0]['king_rate'] * 100
+                        st.markdown(f"""
+                        <div class="custom-card">
+                            <h4>🤴 King Ustası</h4>
+                            <h2 style="color: #FFD700;">{player}</h2>
+                            <p>%{rate:.1f} King kazanma</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+            
+            # Detaylı tablo
+            st.subheader("📈 Tüm İstatistikler")
+            
+            display_cols = ['mac_sayisi', 'pozitif_mac_sayisi', 'toplam_puan', 'kkd', 
+                           'averaj', 'win_streak', 'king_kazanma']
+            
+            display_df = df_main[display_cols].copy()
+            display_df.columns = ['Maç', 'Kazanma', 'Toplam Puan', 'KKD', 
+                                 'Ortalama', 'Aktif Seri', 'King Kazanma']
+            
+            # Sıralama seçeneği
+            sort_by = st.selectbox("Sıralama Ölçütü", 
+                                  ['KKD', 'Ortalama', 'Maç', 'Kazanma', 'Aktif Seri'])
+            
+            st.dataframe(
+                display_df.sort_values(sort_by, ascending=False)
+                .style.format({
+                    'KKD': '{:.0f}',
+                    'Ortalama': '{:.1f}'
+                })
+                .background_gradient(subset=['KKD', 'Ortalama'], cmap='RdYlGn'),
+                use_container_width=True
+            )
+        
+        # 5. ARŞİV
+        with tabs[4]:
+            st.subheader("📜 Maç Arşivi")
+            
+            if not match_hist:
+                st.info("Henüz maç kaydı bulunmuyor.")
+                return
+            
+            # Maç seçimi
+            match_titles = [m['baslik'].replace("--- MAÇ: ", "").replace(" ---", "") 
+                           for m in match_hist[::-1]]
+            
+            selected_match = st.selectbox("Maç Seçin:", match_titles)
+            
+            # Seçilen maçı bul
+            selected_full = f"--- MAÇ: {selected_match} ---"
+            found_match = next((m for m in match_hist if m['baslik'] == selected_full), None)
+            
+            if found_match:
+                # Maç bilgileri
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Tarih", found_match['tarih'].strftime("%d.%m.%Y"))
+                
+                with col2:
+                    st.metric("Oyun Tipi", found_match.get('oyun_tipi', 'Normal'))
+                
+                with col3:
+                    if found_match.get('oyun_tipi') == 'KING':
+                        winner = found_match.get('king_winner')
+                        if winner:
+                            winner_name = id_map.get(winner, 'Bilinmeyen')
+                            st.metric("King Kazanan", winner_name)
+                
+                # Skor tablosu
+                st.subheader("📊 Maç Detayları")
+                
+                # Skorları DataFrame'e dönüştür
+                score_rows = []
+                for score_row in found_match.get('skorlar', []):
+                    row_dict = {'OYUN': score_row[0]}
+                    for i, player in enumerate(found_match.get('oyuncular', [])):
+                        if i + 1 < len(score_row):
+                            row_dict[player] = score_row[i + 1]
+                    score_rows.append(row_dict)
+                
+                if score_rows:
+                    scores_df = pd.DataFrame(score_rows)
+                    
+                    # Toplam satırını ekle
+                    if 'toplamlar' in found_match:
+                        total_row = {'OYUN': 'TOPLAM'}
+                        for i, player in enumerate(found_match.get('oyuncular', [])):
+                            if i + 1 < len(found_match['toplamlar']):
+                                total_row[player] = found_match['toplamlar'][i + 1]
+                        
+                        scores_df = pd.concat([scores_df, pd.DataFrame([total_row])], ignore_index=True)
+                    
+                    # Renklendirme
+                    def color_negative_red(val):
+                        try:
+                            num = float(val)
+                            if num < 0:
+                                color = '#ff6b6b'
+                            elif num > 0:
+                                color = '#06d6a0'
+                            else:
+                                color = 'white'
+                            return f'color: {color}; font-weight: bold;'
+                        except:
+                            return ''
+                    
+                    st.dataframe(
+                        scores_df.style.applymap(color_negative_red, subset=found_match.get('oyuncular', []))
+                        .set_properties(**{'text-align': 'center'}),
+                        use_container_width=True
+                    )
+                
+                # Ceza detayları
+                if found_match.get('ceza_detaylari'):
+                    st.subheader("🚫 Ceza Detayları")
+                    
+                    penalty_data = []
+                    for uid, penalties in found_match['ceza_detaylari'].items():
+                        player_name = id_map.get(uid, f"Bilinmeyen({uid})")
+                        for ceza_type, count in penalties.items():
+                            if count > 0:
+                                penalty_data.append({
+                                    'Oyuncu': player_name,
+                                    'Ceza Türü': ceza_type,
+                                    'Sayı': count,
+                                    'Toplam Puan': count * OYUN_KURALLARI.get(ceza_type, {}).get('puan', 0)
+                                })
+                    
+                    if penalty_data:
+                        penalty_df = pd.DataFrame(penalty_data)
+                        st.dataframe(
+                            penalty_df.sort_values('Toplam Puan').style.format({
+                                'Toplam Puan': '{:.0f}'
+                            }),
+                            use_container_width=True
+                        )
+        
+        # 6. CEZALAR
+        with tabs[5]:
+            st.subheader("🚫 Ceza İstatistikleri")
+            
+            # Ceza verilerini hazırla
+            ceza_data = []
+            
+            for uid, s in stats.items():
+                if s['mac_sayisi'] == 0:
+                    continue
+                    
+                player_name = id_map.get(uid, f"Bilinmeyen({uid})")
+                
+                # Toplam ceza sayısı
+                total_penalties = sum(s['cezalar'].values())
+                
+                if total_penalties > 0 or True:  # Tüm oyuncuları göster
+                    row = {'Oyuncu': player_name, 'Maç': s['mac_sayisi'], 'Toplam Ceza': total_penalties}
+                    
+                    # Her ceza türü için
+                    for ceza_type in OYUN_KURALLARI:
+                        count = s['cezalar'].get(ceza_type, 0)
+                        # Maç başına ortalama
+                        avg_per_match = count / s['mac_sayisi'] if s['mac_sayisi'] > 0 else 0
+                        row[ceza_type] = f"{count} ({avg_per_match:.2f})"
+                    
+                    ceza_data.append(row)
+            
+            if ceza_data:
+                ceza_df = pd.DataFrame(ceza_data).set_index('Oyuncu')
+                
+                # En çok ceza alanlar
+                st.subheader("🏆 Ceza Liderleri")
+                
+                top_penalty = ceza_df.nlargest(5, 'Toplam Ceza')[['Toplam Ceza', 'Maç']]
                 st.dataframe(
-                    partner_df.style.format({
-                        'Win Rate %': '{:.1f}%'
-                    }).background_gradient(subset=['Win Rate %'], cmap='RdYlGn'),
+                    top_penalty.style.background_gradient(subset=['Toplam Ceza'], cmap='Reds'),
                     use_container_width=True
                 )
                 
-                # Partner grafiği
-                st.bar_chart(partner_df.set_index('Partner')['Win Rate %'])
+                # Ceza türlerine göre dağılım
+                st.subheader("📊 Ceza Türü Dağılımı")
+                
+                # Grafik için veri hazırla
+                penalty_types = []
+                penalty_counts = []
+                colors = []
+                
+                for uid, s in stats.items():
+                    if s['mac_sayisi'] > 0:
+                        for ceza_type, count in s['cezalar'].items():
+                            if count > 0:
+                                penalty_types.append(ceza_type)
+                                penalty_counts.append(count)
+                                colors.append(OYUN_KURALLARI.get(ceza_type, {}).get('renk', '#FF0000'))
+                
+                if penalty_counts and HAS_MATPLOTLIB:
+                    try:
+                        # Bar chart
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        
+                        # Benzersiz türleri grupla
+                        unique_types = list(set(penalty_types))
+                        type_counts = [penalty_counts[i] for i in range(len(penalty_types))]
+                        
+                        if unique_types:
+                            bars = ax.bar(unique_types, type_counts, 
+                                         color=[OYUN_KURALLARI.get(t, {}).get('renk', '#FF0000') for t in unique_types])
+                            
+                            # Değerleri üzerine yaz
+                            for i, (t, c) in enumerate(zip(unique_types, type_counts)):
+                                ax.text(i, c + 0.1, str(c), ha='center', va='bottom', fontweight='bold')
+                            
+                            ax.set_xticks(range(len(unique_types)))
+                            ax.set_xticklabels(unique_types, rotation=45, ha='right')
+                            ax.set_ylabel('Toplam Sayı')
+                            ax.set_title('Ceza Türlerine Göre Toplam Dağılım')
+                            ax.grid(True, alpha=0.3)
+                            
+                            st.pyplot(fig)
+                            plt.close(fig)
+                    except Exception as e:
+                        st.warning(f"Grafik oluşturulamadı: {str(e)}")
+                
+                # Detaylı tablo
+                st.subheader("📋 Detaylı Ceza Karnesi")
+                
+                # Sadece sayısal değerleri göster
+                display_cols = ['Maç', 'Toplam Ceza'] + list(OYUN_KURALLARI.keys())
+                if set(display_cols).issubset(ceza_df.columns):
+                    display_df = ceza_df[display_cols].sort_values('Toplam Ceza', ascending=False)
+                    
+                    st.dataframe(
+                        display_df.style.background_gradient(subset=['Toplam Ceza'], cmap='Reds'),
+                        use_container_width=True,
+                        height=min(600, 150 + len(display_df) * 35)
+                    )
+                else:
+                    st.warning("Ceza verileri eksik veya hatalı.")
             else:
-                st.info("Henüz partner verisi bulunmuyor.")
-        else:
-            st.warning("Partner analizi için giriş yapmalısınız.")
+                st.info("Henüz ceza kaydı bulunmuyor.")
+        
+        # 7. KOMANDİT
+        with tabs[6]:
+            st.subheader("🤝 Partner Performans Analizi")
+            
+            current_user_id = st.session_state.get("user_id")
+            
+            if current_user_id and current_user_id in stats:
+                user_stats = stats[current_user_id]
+                user_name = id_map.get(current_user_id, "Bilinmeyen")
+                
+                st.markdown(f"**{user_name}** için partner analizi:")
+                
+                partner_data = []
+                
+                for partner_id, partner_stats in user_stats.get('partnerler', {}).items():
+                    partner_name = id_map.get(partner_id, f"Bilinmeyen({partner_id})")
+                    matches_together = partner_stats.get('birlikte_mac', 0)
+                    wins_together = partner_stats.get('beraber_kazanma', 0)
+                    
+                    if matches_together > 0:
+                        win_rate = (wins_together / matches_together) * 100
+                        
+                        partner_data.append({
+                            'Partner': partner_name,
+                            'Birlikte Maç': matches_together,
+                            'Birlikte Kazanma': wins_together,
+                            'Win Rate %': win_rate,
+                            'Başarı': 'Yüksek' if win_rate > 60 else ('Orta' if win_rate > 40 else 'Düşük')
+                        })
+                
+                if partner_data:
+                    partner_df = pd.DataFrame(partner_data).sort_values('Win Rate %', ascending=False)
+                    
+                    # En iyi partner
+                    best_partner = partner_df.iloc[0]
+                    st.success(f"""
+                    **🤝 En İyi Partner: {best_partner['Partner']}**
+                    {best_partner['Birlikte Kazanma']} kazanma / {best_partner['Birlikte Maç']} maç
+                    (%{best_partner['Win Rate %']:.1f} başarı)
+                    """)
+                    
+                    # Tablo
+                    st.dataframe(
+                        partner_df.style.format({
+                            'Win Rate %': '{:.1f}%'
+                        }).background_gradient(subset=['Win Rate %'], cmap='RdYlGn'),
+                        use_container_width=True
+                    )
+                    
+                    # Partner grafiği
+                    if HAS_MATPLOTLIB:
+                        try:
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            
+                            x_pos = range(len(partner_df))
+                            colors = ['#FFD700', '#C0C0C0', '#CD7F32'] + ['#28a745'] * (len(partner_df) - 3)
+                            
+                            bars = ax.bar(x_pos, partner_df['Win Rate %'], color=colors)
+                            
+                            for i, (idx, row) in enumerate(partner_df.iterrows()):
+                                ax.text(i, row['Win Rate %'] + 1, f"{row['Win Rate %']:.1f}%", 
+                                       ha='center', va='bottom', fontweight='bold')
+                            
+                            ax.set_xticks(x_pos)
+                            ax.set_xticklabels(partner_df['Partner'], rotation=45, ha='right')
+                            ax.set_ylabel('Win Rate %')
+                            ax.set_title('Partnerlere Göre Win Rate')
+                            ax.grid(True, alpha=0.3)
+                            
+                            st.pyplot(fig)
+                            plt.close(fig)
+                        except Exception as e:
+                            st.warning(f"Grafik oluşturulamadı: {str(e)}")
+                else:
+                    st.info("Henüz partner verisi bulunmuyor.")
+            else:
+                st.warning("Partner analizi için giriş yapmalısınız.")
+    except Exception as e:
+        st.error(f"İstatistikler yüklenirken hata oluştu: {str(e)}")
 
 def profile_interface():
     st.markdown(f"<h2>👤 Profil: {st.session_state['username']}</h2>", unsafe_allow_html=True)
     
-    stats, match_history, _, id_map = istatistikleri_hesapla()
-    uid = st.session_state.get("user_id")
-    
-    if uid in stats:
-        s = stats[uid]
-        player_name = id_map.get(uid, "Bilinmeyen")
+    try:
+        stats, match_history, _, id_map = istatistikleri_hesapla()
+        uid = st.session_state.get("user_id")
         
-        # Temel metrikler
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            win_rate = (s['pozitif_mac_sayisi'] / s['mac_sayisi'] * 100) if s['mac_sayisi'] > 0 else 0
-            st.metric("Win Rate", f"%{win_rate:.1f}")
-        
-        with col2:
-            st.metric("KKD", int(s['kkd']))
-        
-        with col3:
-            st.metric("Aktif Seri", s['win_streak'])
-        
-        # Detaylı metrikler
-        col4, col5, col6 = st.columns(3)
-        
-        with col4:
-            avg_score = s['toplam_puan'] / s['mac_sayisi'] if s['mac_sayisi'] > 0 else 0
-            st.metric("Ortalama Puan", f"{avg_score:.1f}")
-        
-        with col5:
-            king_rate = (s.get('king_kazanma', 0) / max(s.get('king_sayisi', 1), 1)) * 100
-            st.metric("King Başarı", f"%{king_rate:.1f}")
-        
-        with col6:
-            penalty_avg = s['toplam_ceza_puani'] / s['mac_sayisi'] if s['mac_sayisi'] > 0 else 0
-            st.metric("Ort. Ceza", f"{penalty_avg:.1f}")
-        
-        # Son 5 maç
-        st.subheader("📈 Son 5 Maç")
-        
-        if s.get('son_5_mac'):
-            recent_matches = []
-            for match in s['son_5_mac'][-5:]:
-                recent_matches.append({
-                    'Tarih': match['tarih'].strftime("%d.%m"),
-                    'Puan': match['puan'],
-                    'Sonuç': '✅' if match['kazandi'] else '❌',
-                    'Tur': match['tur']
-                })
+        if uid in stats:
+            s = stats[uid]
+            player_name = id_map.get(uid, "Bilinmeyen")
             
-            recent_df = pd.DataFrame(recent_matches[::-1])
-            st.dataframe(recent_df, use_container_width=True)
+            # Temel metrikler
+            col1, col2, col3 = st.columns(3)
             
-            # Form grafiği
-            scores = [m['puan'] for m in s['son_5_mac'][-5:]]
-            if scores:
-                st.line_chart(scores)
-        
-        # Aylık performans
-        st.subheader("📅 Aylık Performans")
-        
-        if s.get('aylik_performans'):
-            monthly_data = []
-            for month, data in s['aylik_performans'].items():
-                if data['mac'] > 0:
-                    monthly_data.append({
-                        'Ay': month,
-                        'Maç': data['mac'],
-                        'Ortalama': data['puan'] / data['mac'],
-                        'Toplam': data['puan']
+            with col1:
+                win_rate = (s['pozitif_mac_sayisi'] / s['mac_sayisi'] * 100) if s['mac_sayisi'] > 0 else 0
+                st.metric("Win Rate", f"%{win_rate:.1f}")
+            
+            with col2:
+                st.metric("KKD", int(s['kkd']))
+            
+            with col3:
+                st.metric("Aktif Seri", s['win_streak'])
+            
+            # Detaylı metrikler
+            col4, col5, col6 = st.columns(3)
+            
+            with col4:
+                avg_score = s['toplam_puan'] / s['mac_sayisi'] if s['mac_sayisi'] > 0 else 0
+                st.metric("Ortalama Puan", f"{avg_score:.1f}")
+            
+            with col5:
+                king_rate = (s.get('king_kazanma', 0) / max(s.get('king_sayisi', 1), 1)) * 100
+                st.metric("King Başarı", f"%{king_rate:.1f}")
+            
+            with col6:
+                penalty_avg = s['toplam_ceza_puani'] / s['mac_sayisi'] if s['mac_sayisi'] > 0 else 0
+                st.metric("Ort. Ceza", f"{penalty_avg:.1f}")
+            
+            # Son 5 maç
+            st.subheader("📈 Son 5 Maç")
+            
+            if s.get('son_5_mac'):
+                recent_matches = []
+                for match in s['son_5_mac'][-5:]:
+                    recent_matches.append({
+                        'Tarih': match['tarih'].strftime("%d.%m"),
+                        'Puan': match['puan'],
+                        'Sonuç': '✅' if match['kazandi'] else '❌',
+                        'Tur': match['tur']
                     })
-            
-            if monthly_data:
-                monthly_df = pd.DataFrame(monthly_data).sort_values('Ay', ascending=False)
-                st.dataframe(
-                    monthly_df.style.format({'Ortalama': '{:.1f}'}),
-                    use_container_width=True
-                )
-        
-        # Akıllı koç
-        st.divider()
-        st.subheader("🎓 Akıllı Koç Önerileri")
-        
-        if s['mac_sayisi'] > 5:
-            # En çok ceza alınan oyun
-            if s['cezalar']:
-                worst_ceza = max(s['cezalar'].items(), key=lambda x: x[1])
-                ceza_name = worst_ceza[0]
-                ceza_count = worst_ceza[1]
                 
-                if ceza_name in VIDEO_MAP:
-                    st.warning(f"""
-                    **⚠️ Gelişim Alanı: {ceza_name}**
+                recent_df = pd.DataFrame(recent_matches[::-1])
+                st.dataframe(recent_df, use_container_width=True)
+                
+                # Form grafiği
+                scores = [m['puan'] for m in s['son_5_mac'][-5:]]
+                if scores and HAS_MATPLOTLIB:
+                    try:
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        ax.plot(range(1, len(scores) + 1), scores, 
+                               marker='o', linewidth=3, color='#FFD700', markersize=10)
+                        
+                        # Noktaları renklendir
+                        for i, score in enumerate(scores):
+                            color = '#28a745' if score >= 0 else '#dc3545'
+                            ax.plot(i + 1, score, 'o', color=color, markersize=12)
+                        
+                        ax.set_xlabel('Maç')
+                        ax.set_ylabel('Puan')
+                        ax.set_title('Son 5 Maç Form Grafiği')
+                        ax.grid(True, alpha=0.3)
+                        
+                        st.pyplot(fig)
+                        plt.close(fig)
+                    except Exception as e:
+                        st.warning(f"Grafik oluşturulamadı: {str(e)}")
+            
+            # Aylık performans
+            st.subheader("📅 Aylık Performans")
+            
+            if s.get('aylik_performans'):
+                monthly_data = []
+                for month, data in s['aylik_performans'].items():
+                    if data['mac'] > 0:
+                        monthly_data.append({
+                            'Ay': month,
+                            'Maç': data['mac'],
+                            'Ortalama': data['puan'] / data['mac'],
+                            'Toplam': data['puan']
+                        })
+                
+                if monthly_data:
+                    monthly_df = pd.DataFrame(monthly_data).sort_values('Ay', ascending=False)
+                    st.dataframe(
+                        monthly_df.style.format({'Ortalama': '{:.1f}'}),
+                        use_container_width=True
+                    )
+            
+            # Akıllı koç
+            st.divider()
+            st.subheader("🎓 Akıllı Koç Önerileri")
+            
+            if s['mac_sayisi'] > 5:
+                # En çok ceza alınan oyun
+                if s['cezalar']:
+                    worst_ceza = max(s['cezalar'].items(), key=lambda x: x[1])
+                    ceza_name = worst_ceza[0]
+                    ceza_count = worst_ceza[1]
                     
-                    Toplam {ceza_count} kez bu cezayı aldınız.
-                    Bu konuda pratik yapmanız önerilir.
+                    if ceza_name in VIDEO_MAP:
+                        st.warning(f"""
+                        **⚠️ Gelişim Alanı: {ceza_name}**
+                        
+                        Toplam {ceza_count} kez bu cezayı aldınız.
+                        Bu konuda pratik yapmanız önerilir.
+                        """)
+                        
+                        if st.button("📺 Ders Videosunu İzle", key="coach_video"):
+                            st.markdown(f"[Ders videosu için tıklayın]({VIDEO_MAP[ceza_name]})")
+                
+                # Genel öneriler
+                if win_rate < 40:
+                    st.info("""
+                    **💡 Öneri:** Oyun stratejinizi gözden geçirin. 
+                    Daha agresif veya daha savunmacı oynamayı deneyebilirsiniz.
                     """)
+                elif s['win_streak'] >= 3:
+                    st.success(f"""
+                    **🔥 Harika Gidiyorsunuz!** 
+                    {s['win_streak']} maçlık kazanma seriniz var. 
+                    Bu formu koruyun!
+                    """)
+        
+        # Ayarlar
+        st.divider()
+        with st.expander("⚙️ Hesap Ayarları", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                new_username = st.text_input("Yeni Kullanıcı Adı", st.session_state['username'])
+            
+            with col2:
+                new_password = st.text_input("Yeni Şifre", type="password", 
+                                           placeholder="Değiştirmek istemiyorsanız boş bırakın")
+            
+            if st.button("🔄 Profili Güncelle", type="secondary"):
+                if not new_username.strip():
+                    st.error("Kullanıcı adı boş olamaz!")
+                    return
                     
-                    if st.button("📺 Ders Videosunu İzle", key="coach_video"):
-                        st.markdown(f"[Ders videosu için tıklayın]({VIDEO_MAP[ceza_name]})")
-            
-            # Genel öneriler
-            if win_rate < 40:
-                st.info("""
-                **💡 Öneri:** Oyun stratejinizi gözden geçirin. 
-                Daha agresif veya daha savunmacı oynamayı deneyebilirsiniz.
-                """)
-            elif s['win_streak'] >= 3:
-                st.success("""
-                **🔥 Harika Gidiyorsunuz!** {s['win_streak']} maçlık kazanma seriniz var. 
-                Bu formu koruyun!
-                """)
-    
-    # Ayarlar
-    st.divider()
-    with st.expander("⚙️ Hesap Ayarları", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            new_username = st.text_input("Yeni Kullanıcı Adı", st.session_state['username'])
-        
-        with col2:
-            new_password = st.text_input("Yeni Şifre", type="password", 
-                                       placeholder="Değiştirmek istemiyorsanız boş bırakın")
-        
-        if st.button("🔄 Profili Güncelle", type="secondary"):
-            if not new_username.strip():
-                st.error("Kullanıcı adı boş olamaz!")
-                return
+                result = update_user_in_sheet(
+                    st.session_state['username'],
+                    new_username,
+                    new_password if new_password else "1234",
+                    st.session_state['role']
+                )
                 
-            result = update_user_in_sheet(
-                st.session_state['username'],
-                new_username,
-                new_password if new_password else "1234",
-                st.session_state['role']
-            )
-            
-            if result in ["updated", "added"]:
-                st.success("Profil güncellendi!")
-                st.session_state['username'] = new_username
-                time.sleep(2)
-                st.rerun()
-            else:
-                st.error("Güncelleme başarısız!")
+                if result in ["updated", "added"]:
+                    st.success("Profil güncellendi!")
+                    st.session_state['username'] = new_username
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error("Güncelleme başarısız!")
+    except Exception as e:
+        st.error(f"Profil yüklenirken hata oluştu: {str(e)}")
 
 def admin_panel():
     st.markdown("<h2>🛠️ Yönetim Paneli</h2>", unsafe_allow_html=True)
@@ -2147,18 +2389,21 @@ def admin_panel():
     st.divider()
     st.subheader("🎮 Maç Yönetimi")
     
-    stats, match_hist, _, _ = istatistikleri_hesapla()
-    
-    if match_hist:
-        match_titles = [m['baslik'] for m in match_hist[::-1]]
+    try:
+        stats, match_hist, _, _ = istatistikleri_hesapla()
         
-        selected_match = st.selectbox("Silinecek Maçı Seç:", match_titles)
-        
-        if st.button("🗑️ Seçili Maçı Sil", type="secondary"):
-            if delete_match_from_sheet(selected_match):
-                st.rerun()
-    else:
-        st.info("Henüz maç kaydı bulunmuyor.")
+        if match_hist:
+            match_titles = [m['baslik'] for m in match_hist[::-1]]
+            
+            selected_match = st.selectbox("Silinecek Maçı Seç:", match_titles)
+            
+            if st.button("🗑️ Seçili Maçı Sil", type="secondary"):
+                if delete_match_from_sheet(selected_match):
+                    st.rerun()
+        else:
+            st.info("Henüz maç kaydı bulunmuyor.")
+    except Exception as e:
+        st.error(f"Maç yönetimi yüklenirken hata oluştu: {str(e)}")
     
     # Sistem araçları
     st.divider()
@@ -2255,7 +2500,11 @@ def main():
     }
     
     if selected_page in page_map:
-        page_map[selected_page]()
+        try:
+            page_map[selected_page]()
+        except Exception as e:
+            st.error(f"Sayfa yüklenirken hata oluştu: {str(e)}")
+            st.info("Lütfen sayfayı yenileyin veya daha sonra tekrar deneyin.")
     else:
         st.error("Sayfa bulunamadı!")
 
