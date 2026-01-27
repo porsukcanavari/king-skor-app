@@ -5,93 +5,70 @@ from datetime import datetime, timedelta
 from utils.database import get_users_map, save_match_to_sheet
 from utils.config import OYUN_KURALLARI
 
-# --- NİHAİ CSS: DARK MODE KATİLİ ---
+# --- NİHAİ CSS: NEGATİF FİLTRE TEKNİĞİ ---
 def inject_paper_css():
     st.markdown("""
     <style>
-        /* 1. BAŞLIK KUTUSU (Parşömen) */
+        /* 1. BAŞLIK KUTUSU (Burası Normal) */
         .paper-header-box {
             background-color: #fdfbf7;
             background-image: url("https://www.transparenttextures.com/patterns/cream-paper.png");
             color: #2c1e12;
             padding: 25px;
             border: 2px solid #8b7d6b;
-            border-bottom: none; /* Tabloyla birleşsin */
+            border-bottom: none;
             border-radius: 5px 5px 0 0;
             font-family: 'Courier New', Courier, monospace;
             text-align: center;
             position: relative;
-            z-index: 2;
+            z-index: 5;
         }
 
         .paper-title {
-            font-size: 2.5em;
+            font-size: 2.2em;
             color: #8b0000 !important;
             text-transform: uppercase;
             font-weight: 900;
             letter-spacing: 2px;
             margin-bottom: 5px;
-            text-shadow: 2px 2px 0px rgba(0,0,0,0.1);
+            text-shadow: 1px 1px 0px rgba(0,0,0,0.1);
         }
 
-        /* 2. TABLO İŞGALİ (Brute Force) */
-        /* Streamlit'in tabloyu oluşturduğu kapsayıcıyı hedef alıyoruz */
+        /* 2. TABLO OPERASYONU (INVERT + SEPIA) */
+        /* Mantık: Siyah temayı ters çevirip (Beyaz yapıp) sarartıyoruz */
         [data-testid="stDataEditor"] {
-            border: 2px solid #8b7d6b !important;
-            border-top: 1px dashed #2c1e12 !important;
-            border-radius: 0 0 5px 5px !important;
-            background-color: #fdfbf7 !important; /* Krem Arka Plan */
+            filter: invert(0.9) sepia(0.3) hue-rotate(180deg) brightness(1.1) contrast(0.9);
+            background-color: black !important; /* Ters çevrilince krem olacak */
+            border-radius: 0 0 5px 5px;
+            border: 2px solid #555 !important; /* Terste kahverengi çerçeve */
+            border-top: none !important;
         }
 
-        /* Tablonun içindeki HER ŞEYİ zorla boyuyoruz */
-        /* Bu kısım Dark Mode'un siyah inadını kırar */
-        [data-testid="stDataEditor"] div, 
-        [data-testid="stDataEditor"] span,
-        [data-testid="stDataEditor"] p {
-            background-color: #fdfbf7 !important;
-            color: #2c1e12 !important; /* Koyu Kahve Yazı */
-            font-family: 'Courier New', Courier, monospace !important;
-        }
-
-        /* Sütun Başlıkları (Header) - Biraz daha koyu krem */
-        [data-testid="stDataEditor"] [role="columnheader"],
-        [data-testid="stDataEditor"] [role="columnheader"] div,
-        [data-testid="stDataEditor"] [role="columnheader"] span {
-            background-color: #e6dec3 !important; 
-            color: #3d2b1f !important;
-            font-weight: bold !important;
-            border-bottom: 2px solid #2c1e12 !important;
-        }
-
-        /* Satır Numaraları (Index) */
-        [data-testid="stDataEditor"] [role="rowheader"] {
-            background-color: #fdfbf7 !important;
-            color: #8b7d6b !important;
-            border-right: 1px dashed #8b7d6b !important;
-        }
-
-        /* Hücreler ve Satırlar */
-        [data-testid="stDataEditor"] [role="gridcell"] {
-            background-color: #fdfbf7 !important;
-            border-bottom: 1px solid #e0dacc !important;
-        }
-
-        /* Veri Giriş Kutusu (Input) - Beyaz olsun ki yazdığımız görünsün */
+        /* İçerdeki input alanları ters dönmesin diye onları Geri Ters Çeviriyoruz */
+        /* Çift negatif = Pozitif */
         [data-testid="stDataEditor"] input {
-            background-color: #ffffff !important;
-            color: #000000 !important;
-            border: 1px solid #8b0000 !important;
-            font-weight: bold !important;
+            filter: invert(1) hue-rotate(180deg);
+            color: black !important;
+            background-color: #eee !important;
+            font-weight: bold;
         }
 
-        /* Tablonun etrafındaki boşlukları temizle */
-        [data-testid="stDataFrameResizable"] {
-            background-color: #fdfbf7 !important;
+        /* Sütun başlıklarının renk ayarı */
+        div[role="columnheader"] {
+            font-weight: 900 !important;
+            font-family: 'Courier New', Courier, monospace !important;
+            font-size: 1.1em !important;
         }
         
-        /* Satır üzerine gelince (Hover) */
-        [data-testid="stDataEditor"] [role="row"]:hover [role="gridcell"] {
-            background-color: #f0e6d2 !important; /* Hafif koyulaşma */
+        /* Satır aralıkları */
+        div[role="gridcell"] {
+            font-family: 'Courier New', Courier, monospace !important;
+            font-weight: 600;
+        }
+
+        /* Kenar boşluklarını temizle */
+        [data-testid="stDataFrameResizable"] {
+            background-color: transparent !important;
         }
 
     </style>
@@ -157,7 +134,7 @@ def game_interface():
         <div class="paper-title">{st.session_state['current_match_name']}</div>
         <div style="font-style:italic; font-weight:bold;">📅 {st.session_state['match_date']} | 👥 4 Kişi</div>
         <div style="margin-top:10px; font-size:0.8em; border-top:1px dashed #2c1e12; padding-top:5px;">
-            Cezaları ve Koz ellerini giriniz. Puanlar otomatik hesaplanır.
+            Cezalar ve Koz ellerini giriniz. Tablo kağıt görünümündedir.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -167,7 +144,6 @@ def game_interface():
     for p in players:
         column_config[p] = st.column_config.NumberColumn(p, min_value=0, step=1, required=True)
 
-    # Boşluk temizliği
     st.markdown('<style>div.block-container{padding-top:1rem;}</style>', unsafe_allow_html=True)
 
     edited_df = st.data_editor(
@@ -181,7 +157,7 @@ def game_interface():
     st.session_state["sheet_df"] = edited_df
     st.write("") 
 
-    # Kayıt Butonları
+    # Kayıt
     col_save, col_cancel = st.columns([2, 1])
     errors = []
     valid_data_rows = []
@@ -219,12 +195,10 @@ def game_interface():
                     p_score = 0
                     for v_row in valid_data_rows: p_score += v_row[p_idx + 1]
                     final_total.append(p_score)
-                
                 header = ["OYUN TÜRÜ"]
                 for p in players:
                     uid = name_to_id.get(p, "?")
                     header.append(f"{p} (uid:{uid})")
-
                 if save_match_to_sheet(header, valid_data_rows, final_total):
                     st.balloons()
                     st.success("Maç kaydedildi!")
@@ -232,7 +206,7 @@ def game_interface():
                     st.session_state["sheet_df"] = pd.DataFrame()
                     st.rerun()
     elif not valid_data_rows:
-        with col_save: st.info("Lütfen tabloyu doldurun.")
+        with col_save: st.info("Tabloyu doldurun.")
     else:
         with col_save: st.warning("⚠️ Hatalar var.")
         with st.expander("Hatalar", expanded=True):
