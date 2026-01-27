@@ -5,78 +5,83 @@ from datetime import datetime, timedelta
 from utils.database import get_users_map, save_match_to_sheet
 from utils.config import OYUN_KURALLARI
 
-# --- ÖZEL KAĞIT TASARIMI CSS (GÜÇLENDİRİLMİŞ) ---
+# --- ÖZEL KAĞIT TASARIMI CSS (KARANLIK MOD KATİLİ) ---
 def inject_paper_css():
     st.markdown("""
     <style>
-        /* 1. Ana Parşömen Kutusu (Başlık ve Bilgi kısmı için) */
+        /* 1. PARŞÖMEN BAŞLIK ALANI */
         .paper-header-box {
             background-color: #fdfbf7;
             background-image: url("https://www.transparenttextures.com/patterns/cream-paper.png");
             color: #2c1e12;
-            padding: 20px;
-            border: 1px solid #d3c6a0;
-            border-radius: 5px 5px 0 0; /* Alt köşe düz, tablo ile birleşsin */
+            padding: 25px;
+            border: 2px solid #8b7d6b;
+            border-bottom: none; /* Tabloyla birleşsin */
+            border-radius: 5px 5px 0 0;
             font-family: 'Courier New', Courier, monospace;
             text-align: center;
-            border-bottom: 2px dashed #2c1e12;
+            box-shadow: 0px -2px 10px rgba(0,0,0,0.1);
         }
 
-        /* 2. TABLO İÇİN ZORLA KAĞIT GÖRÜNÜMÜ */
-        /* Streamlit'in kendi tablosunu hedef alıyoruz */
+        .paper-title {
+            font-size: 2.2em;
+            color: #8b0000 !important;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            font-weight: 900;
+            margin-bottom: 5px;
+            text-shadow: 1px 1px 0px rgba(255,255,255,0.5);
+        }
+
+        /* 2. TABLOYU ZORLA BEYAZLATMA OPERASYONU */
+        
+        /* Data Editor'un kapsayıcısı: Renk şemasını 'light' yapıyoruz */
         [data-testid="stDataEditor"] {
-            background-color: #fdfbf7 !important; /* Arka plan krem */
-            border: 1px solid #d3c6a0 !important;
-            border-top: none !important; /* Başlıkla birleşsin */
-            border-radius: 0 0 5px 5px;
+            background-color: #fdfbf7 !important;
+            border: 2px solid #8b7d6b !important;
+            border-top: 1px dashed #2c1e12 !important;
+            border-radius: 0 0 5px 5px !important;
+            padding: 0 !important;
+            color-scheme: light !important; /* KRİTİK HAMLE: Tarayıcıya burası aydınlık de! */
+        }
+
+        /* Tablo içindeki tüm metinler */
+        [data-testid="stDataEditor"] * {
+            color: #2c1e12 !important; /* Koyu kahve yazı */
+            font-family: 'Courier New', Courier, monospace !important;
+            font-weight: 600 !important;
         }
 
         /* Tablo Başlıkları (Header) */
-        [data-testid="stDataEditor"] div[role="columnheader"] {
-            background-color: #e6dec3 !important; /* Biraz daha koyu krem */
-            color: #4a3b2a !important; /* Koyu kahve yazı */
-            font-family: 'Courier New', Courier, monospace;
-            font-weight: bold;
+        div[role="columnheader"] {
+            background-color: #e6dec3 !important; /* Koyu krem */
             border-bottom: 2px solid #2c1e12 !important;
+            color: #4a3b2a !important;
         }
 
-        /* Tablo Hücreleri (Cells) */
-        [data-testid="stDataEditor"] div[role="gridcell"] {
-            background-color: #fdfbf7 !important;
-            color: #2c1e12 !important; /* Siyah/Kahve yazı */
-            font-family: 'Courier New', Courier, monospace;
-            border-bottom: 1px solid #e0dacc !important;
+        /* Tablo Satırları ve Hücreler */
+        div[role="gridcell"], div[role="row"] {
+            background-color: #fdfbf7 !important; /* Açık krem */
+            border-bottom: 1px solid #d3c6a0 !important;
         }
 
-        /* Satır Numaraları (Index) - Gizli olsa bile ayarını yapalım */
-        [data-testid="stDataEditor"] div[role="rowheader"] {
-            background-color: #fdfbf7 !important;
-            color: #8b7d6b !important;
+        /* Hover (Üzerine gelince) Efekti */
+        div[role="row"]:hover div[role="gridcell"] {
+            background-color: #f0e6d2 !important; /* Hafif koyulaşsın */
         }
-        
-        /* Tablo içindeki input alanları (Tıklayınca açılan yer) */
-        [data-testid="stDataEditor"] input {
-            color: #000000 !important;
+
+        /* Input Alanı (Sayı yazarken çıkan kutu) */
+        input[type="number"] {
             background-color: #ffffff !important;
-            font-family: 'Courier New', Courier, monospace;
+            color: #000000 !important;
+            border: 1px solid #8b0000 !important;
         }
 
-        /* Başlık Stili */
-        .paper-title {
-            font-size: 2em;
-            color: #8b0000 !important; /* Kan kırmızısı başlık */
-            text-transform: uppercase;
-            letter-spacing: 3px;
-            margin-bottom: 5px;
-            font-weight: bold;
-            text-shadow: 1px 1px 0px rgba(0,0,0,0.1);
+        /* Streamlit'in tablonun etrafındaki boşlukları */
+        [data-testid="stDataFrameResizable"] {
+            background-color: #fdfbf7 !important;
         }
         
-        .paper-info {
-            font-size: 0.9em;
-            font-style: italic;
-            opacity: 0.8;
-        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -88,7 +93,7 @@ def create_paper_sheet(players):
     
     # 1. Ceza Oyunları
     for oyun_adi, kural in OYUN_KURALLARI.items():
-        if "Koz" in oyun_adi: continue # Koz'u ayır
+        if "Koz" in oyun_adi: continue 
             
         limit = kural['limit']
         for _ in range(limit):
@@ -107,7 +112,7 @@ def create_paper_sheet(players):
     return pd.DataFrame(data)
 
 def game_interface():
-    # CSS'i enjekte et
+    # CSS'i enjekte et (Karanlık Mod Katili)
     inject_paper_css()
     
     id_to_name, name_to_id, _ = get_users_map()
@@ -152,19 +157,22 @@ def game_interface():
     st.markdown(f"""
     <div class="paper-header-box">
         <div class="paper-title">{st.session_state['current_match_name']}</div>
-        <div class="paper-info">📅 {st.session_state['match_date']} | 👥 4 Kişi</div>
+        <div style="font-style:italic; opacity:0.8;">📅 {st.session_state['match_date']} | 👥 4 Kişi</div>
         <div style="margin-top:10px; font-size:0.8em; border-top:1px dashed #2c1e12; padding-top:5px;">
             Cezaları ve Koz ellerini giriniz. Sistem otomatik hesaplar.
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # --- TABLO (CSS İLE RENGİ DEĞİŞTİRİLDİ) ---
+    # --- TABLO ---
     column_config = {
         "OYUN": st.column_config.TextColumn("Oyun Türü", disabled=True, width="medium"),
     }
     for p in players:
         column_config[p] = st.column_config.NumberColumn(p, min_value=0, step=1, required=True)
+
+    # Tablonun etrafındaki boşluğu siliyoruz ki başlıkla yapışsın
+    st.markdown('<style>div.block-container{padding-top:1rem;}</style>', unsafe_allow_html=True)
 
     edited_df = st.data_editor(
         df,
@@ -176,7 +184,7 @@ def game_interface():
     
     st.session_state["sheet_df"] = edited_df
     
-    st.write("") # Boşluk
+    st.write("") 
 
     # --- DOĞRULAMA VE KAYIT ---
     col_save, col_cancel = st.columns([2, 1])
@@ -191,7 +199,6 @@ def game_interface():
         game_name = row["OYUN"]
         row_sum = sum([row[p] for p in players])
         
-        # Boş satır kontrolü
         if row_sum == 0:
             pass 
             
@@ -225,7 +232,6 @@ def game_interface():
     if not errors and valid_data_rows:
         with col_save:
             if st.button("💾 KAĞIDI İMZALA VE KAYDET", type="primary", use_container_width=True):
-                # Toplam
                 final_total = ["TOPLAM"]
                 for p_idx, p in enumerate(players):
                     p_score = 0
@@ -246,7 +252,7 @@ def game_interface():
                     st.rerun()
     elif not valid_data_rows:
         with col_save:
-            st.info("Tabloyu doldurunuz.")
+            st.info("Lütfen tabloyu doldurun.")
     else:
         with col_save:
             st.warning("⚠️ Hatalar var.")
