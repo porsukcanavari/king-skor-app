@@ -7,14 +7,15 @@ import re
 import time
 from collections import defaultdict
 
-# Matplotlib kontrolü
+# Matplotlib kontrolü - GELİŞTİRİLMİŞ
 try:
     import matplotlib.pyplot as plt
     import matplotlib
     matplotlib.use('Agg')  # Non-interactive backend
     HAS_MATPLOTLIB = True
-except ImportError:
+except (ImportError, RuntimeError) as e:
     HAS_MATPLOTLIB = False
+    st.warning(f"⚠️ Matplotlib kullanılamıyor: {str(e)}. Grafikler gösterilemeyecek.")
 
 # =============================================================================
 # 🚨 SABİT AYARLAR VE LİNKLER
@@ -261,6 +262,130 @@ def inject_custom_css():
     """, unsafe_allow_html=True)
 
 # =============================================================================
+# YARDIMCI FONKSİYONLAR - GRAFİK ve STİL
+# =============================================================================
+
+def apply_dataframe_styling(df, gradient_columns=None, cmap='RdYlGn'):
+    """
+    DataFrame'e stil uygula, matplotlib yoksa basit stil kullan
+    """
+    styled_df = df.style
+    
+    # Format ayarları
+    if hasattr(df, 'columns'):
+        for col in df.columns:
+            if df[col].dtype in ['float64', 'float32', 'float']:
+                styled_df = styled_df.format({col: '{:.1f}'})
+            elif df[col].dtype in ['int64', 'int32', 'int']:
+                styled_df = styled_df.format({col: '{:.0f}'})
+    
+    # Gradient uygula (sadece matplotlib varsa)
+    if HAS_MATPLOTLIB and gradient_columns:
+        try:
+            styled_df = styled_df.background_gradient(
+                subset=gradient_columns,
+                cmap=cmap
+            )
+        except Exception as e:
+            pass  # Gradienti uygulayamazsak geç
+    
+    return styled_df
+
+def apply_simple_gradient(df, subset=None):
+    """
+    Basit renklendirme uygula (matplotlib olmadan)
+    """
+    def color_negative_red(val):
+        try:
+            num = float(val)
+            if num < 0:
+                color = '#ff6b6b'
+            elif num > 0:
+                color = '#06d6a0'
+            else:
+                color = 'white'
+            return f'color: {color}; font-weight: bold;'
+        except:
+            return ''
+    
+    styled_df = df.style
+    
+    # Format ayarları
+    if hasattr(df, 'columns'):
+        for col in df.columns:
+            if df[col].dtype in ['float64', 'float32', 'float']:
+                styled_df = styled_df.format({col: '{:.1f}'})
+            elif df[col].dtype in ['int64', 'int32', 'int']:
+                styled_df = styled_df.format({col: '{:.0f}'})
+    
+    # Renklendirme uygula
+    if subset:
+        styled_df = styled_df.applymap(color_negative_red, subset=subset)
+    
+    return styled_df
+
+def create_bar_chart(labels, values, title, colors=None):
+    """Basit bar chart oluştur"""
+    if not HAS_MATPLOTLIB:
+        return None
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    if colors is None:
+        colors = ['#28a745'] * len(labels)
+    
+    bars = ax.bar(range(len(labels)), values, color=colors)
+    
+    # Değerleri üzerine yaz
+    for i, v in enumerate(values):
+        ax.text(i, v + (max(values) * 0.01), f"{v:.1f}", 
+               ha='center', va='bottom', fontweight='bold')
+    
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=45, ha='right')
+    ax.set_ylabel('Değer')
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    
+    return fig
+
+def create_pie_chart(labels, sizes, title, colors=None):
+    """Basit pie chart oluştur"""
+    if not HAS_MATPLOTLIB:
+        return None
+    
+    fig, ax = plt.subplots(figsize=(8, 8))
+    
+    if colors is None:
+        colors = plt.cm.Set3.colors
+    
+    ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%',
+          startangle=90, wedgeprops={'edgecolor': 'white'})
+    ax.set_title(title)
+    
+    return fig
+
+def create_line_chart(x_values, y_values, title, color='#FFD700'):
+    """Basit line chart oluştur"""
+    if not HAS_MATPLOTLIB:
+        return None
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    ax.plot(x_values, y_values, marker='o', linewidth=3, color=color, markersize=8)
+    ax.set_xlabel('Maç')
+    ax.set_ylabel('Puan')
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    
+    # Noktaları renklendir
+    for i, y in enumerate(y_values):
+        point_color = '#28a745' if y >= 0 else '#dc3545'
+        ax.plot(i, y, 'o', color=point_color, markersize=10)
+    
+    return fig
+
+# =============================================================================
 # 1. GOOGLE SHEETS - GELİŞTİRİLMİŞ
 # =============================================================================
 
@@ -337,7 +462,7 @@ def get_users_map():
     full_df = pd.DataFrame(full_data) if full_data else pd.DataFrame()
     return id_to_name, name_to_id, full_df
 
-def save_match_to_sheet(header_row, data_rows, total_row, elo_dict):
+def save_match_to_sheet(header_row, data_rows, total_row):
     try:
         wb = get_sheet_by_url()
         if not wb:
@@ -361,7 +486,18 @@ def save_match_to_sheet(header_row, data_rows, total_row, elo_dict):
         
         sheet_maclar.append_rows(append_data)
         
-        # KKD güncelleme
+        # KKD güncelleme için önce cache'i temizle ve bekle
+        clear_cache()
+        time.sleep(2)  # Google Sheets'in güncellenmesi için bekle
+        
+        # Yeni verilere göre KKD'leri hesapla
+        stats, _, _, _ = istatistikleri_hesapla()
+        elo_dict = {}
+        if stats:
+            for uid, data in stats.items():
+                elo_dict[uid] = data['kkd']
+        
+        # KKD'leri sheet'e yaz
         sheet_users = wb.worksheet("Users")
         all_data = sheet_users.get_all_values()
         
@@ -389,7 +525,6 @@ def save_match_to_sheet(header_row, data_rows, total_row, elo_dict):
             except ValueError:
                 pass
         
-        clear_cache()
         st.toast("✅ Maç başarıyla kaydedildi!", icon="✅")
         return True
         
@@ -545,6 +680,7 @@ def istatistikleri_hesapla():
             "toplam_puan": 0,
             "pozitif_mac_sayisi": 0,
             "cezalar": {k: 0 for k in OYUN_KURALLARI},
+            "ceza_puanlari": {k: 0 for k in OYUN_KURALLARI},
             "ceza_detay": defaultdict(int),
             "partnerler": {},
             "rekor_max": -9999,
@@ -584,6 +720,7 @@ def istatistikleri_hesapla():
                 "skorlar": [],
                 "ids": [],
                 "ceza_detaylari": defaultdict(lambda: defaultdict(int)),
+                "ceza_puan_detaylari": defaultdict(lambda: defaultdict(float)),
                 "oyun_tipi": "Normal",
                 "king_winner": None
             }
@@ -642,7 +779,6 @@ def istatistikleri_hesapla():
                         continue
                         
                     stats = player_stats[p_id]
-                    stats["toplam_puan"] += score
                     
                     # King oyunu değilse ceza/koz hesapla
                     if not is_king_game:
@@ -657,13 +793,10 @@ def istatistikleri_hesapla():
                                 count = int(score / birim)
                                 if count > 0:  # Sadece pozitif ceza sayıları
                                     stats["cezalar"][base_name] += count
+                                    stats["ceza_puanlari"][base_name] += score
                                     stats["ceza_detay"][base_name] += count
                                     current_match_data["ceza_detaylari"][p_id][base_name] += count
-                    
-                    # Aylık performans
-                    month_key = current_match_data["tarih"].strftime("%Y-%m")
-                    stats["aylik_performans"][month_key]["mac"] += 1
-                    stats["aylik_performans"][month_key]["puan"] += score
+                                    current_match_data["ceza_puan_detaylari"][p_id][base_name] += score
                     
                 except (ValueError, TypeError):
                     continue
@@ -699,6 +832,7 @@ def istatistikleri_hesapla():
                         if p_id in player_stats:
                             stats = player_stats[p_id]
                             stats["mac_sayisi"] += 1
+                            stats["toplam_puan"] += total  # Toplam puanı burada ekle
                             
                             if is_win:
                                 stats["pozitif_mac_sayisi"] += 1
@@ -714,6 +848,11 @@ def istatistikleri_hesapla():
                             })
                             if len(stats["son_5_mac"]) > 5:
                                 stats["son_5_mac"].pop(0)
+                            
+                            # Aylık performans - SADECE BURADA GÜNCELLE
+                            month_key = current_match_data["tarih"].strftime("%Y-%m")
+                            stats["aylik_performans"][month_key]["mac"] += 1
+                            stats["aylik_performans"][month_key]["puan"] += total
                             
                 except (ValueError, TypeError):
                     continue
@@ -815,71 +954,6 @@ def istatistikleri_hesapla():
             player_stats[p_id]['loss_streak'] = streak_tracker[p_id]['current_loss']
     
     return player_stats, match_history_display, all_matches_chronological, id_to_name
-
-# =============================================================================
-# 3. GRAFİK FONKSİYONLARI
-# =============================================================================
-
-def create_bar_chart(labels, values, title, colors=None):
-    """Basit bar chart oluştur"""
-    if not HAS_MATPLOTLIB:
-        return None
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    if colors is None:
-        colors = ['#28a745'] * len(labels)
-    
-    bars = ax.bar(range(len(labels)), values, color=colors)
-    
-    # Değerleri üzerine yaz
-    for i, v in enumerate(values):
-        ax.text(i, v + (max(values) * 0.01), f"{v:.1f}", 
-               ha='center', va='bottom', fontweight='bold')
-    
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(labels, rotation=45, ha='right')
-    ax.set_ylabel('Değer')
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    
-    return fig
-
-def create_pie_chart(labels, sizes, title, colors=None):
-    """Basit pie chart oluştur"""
-    if not HAS_MATPLOTLIB:
-        return None
-    
-    fig, ax = plt.subplots(figsize=(8, 8))
-    
-    if colors is None:
-        colors = plt.cm.Set3.colors
-    
-    ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%',
-          startangle=90, wedgeprops={'edgecolor': 'white'})
-    ax.set_title(title)
-    
-    return fig
-
-def create_line_chart(x_values, y_values, title, color='#FFD700'):
-    """Basit line chart oluştur"""
-    if not HAS_MATPLOTLIB:
-        return None
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    ax.plot(x_values, y_values, marker='o', linewidth=3, color=color, markersize=8)
-    ax.set_xlabel('Maç')
-    ax.set_ylabel('Puan')
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    
-    # Noktaları renklendir
-    for i, y in enumerate(y_values):
-        point_color = '#28a745' if y >= 0 else '#dc3545'
-        ax.plot(i, y, 'o', color=point_color, markersize=10)
-    
-    return fig
 
 # =============================================================================
 # 4. UI BİLEŞENLERİ
@@ -1070,11 +1144,18 @@ def game_interface():
         display_df = df.copy()
         display_df.index = [idx if not pd.isna(idx) else "" for idx in display_df.index]
         
+        styled_display_df = display_df.style.format("{:.0f}")
+        
+        if HAS_MATPLOTLIB:
+            try:
+                styled_display_df = styled_display_df.background_gradient(cmap="RdYlGn", axis=None)
+            except:
+                pass  # Gradienti uygulayamazsak geç
+        
+        styled_display_df = styled_display_df.set_properties(**{'text-align': 'center'})
+        
         st.dataframe(
-            display_df.style
-            .format("{:.0f}")
-            .background_gradient(cmap="RdYlGn", axis=None)
-            .set_properties(**{'text-align': 'center'}),
+            styled_display_df,
             use_container_width=True,
             height=min(400, 50 + len(df) * 35)
         )
@@ -1134,16 +1215,8 @@ def game_interface():
                     # Toplam satırı
                     total_row = ["TOPLAM"] + [int(totals[p]) for p in players]
                     
-                    # ELO hesapla
-                    stats, _, _, _ = istatistikleri_hesapla()
-                    elo_dict = {}
-                    if stats:
-                        for uid, data in stats.items():
-                            if uid in name_to_id.values():
-                                elo_dict[uid] = data['kkd']
-                    
                     # Kaydet
-                    if save_match_to_sheet(header_row, rows_to_save, total_row, elo_dict):
+                    if save_match_to_sheet(header_row, rows_to_save, total_row):
                         st.session_state["game_active"] = False
                         st.session_state["temp_df"] = pd.DataFrame()
                         st.rerun()
@@ -1406,19 +1479,20 @@ def kkd_leaderboard_interface():
         st.subheader("📊 Detaylı Sıralama")
         
         # Formatlı gösterim
-        styled_df = df_filtered.style.format({
-            'KKD': '{:.0f}',
-            'Win Rate': '{:.1f}%',
-            'Ortalama': '{:.1f}',
-            'Seri': '{:.0f}',
-            'King': '{:.0f}'
-        })
-        
-        # Renklendirme
-        styled_df = styled_df.background_gradient(
-            subset=['KKD', 'Win Rate', 'Ortalama'],
-            cmap='RdYlGn'
-        )
+        if HAS_MATPLOTLIB:
+            styled_df = df_filtered.style.format({
+                'KKD': '{:.0f}',
+                'Win Rate': '{:.1f}%',
+                'Ortalama': '{:.1f}',
+                'Seri': '{:.0f}',
+                'King': '{:.0f}'
+            })
+            styled_df = styled_df.background_gradient(
+                subset=['KKD', 'Win Rate', 'Ortalama'],
+                cmap='RdYlGn'
+            )
+        else:
+            styled_df = apply_simple_gradient(df_filtered, subset=['KKD', 'Win Rate', 'Ortalama'])
         
         st.dataframe(
             styled_df,
@@ -1451,11 +1525,32 @@ def kkd_leaderboard_interface():
 def stats_interface():
     st.markdown("<h2>📊 İstatistik Merkezi</h2>", unsafe_allow_html=True)
     
+    # Açıklama metni
+    st.markdown("""
+    <div class="custom-card">
+        <h3>📖 Nasıl Kullanılır?</h3>
+        <p>Bu sayfada oyun istatistiklerinizi detaylı olarak inceleyebilirsiniz.</p>
+        <ul>
+            <li><strong>🔥 Seriler</strong>: En uzun kazanma/kaybetme serilerinizi görün.</li>
+            <li><strong>⚖️ Averaj</strong>: Oyuncuların ortalama puanlarını karşılaştırın.</li>
+            <li><strong>📅 Rewind</strong>: Belirli bir dönemdeki performansı analiz edin.</li>
+            <li><strong>🏆 Genel</strong>: Tüm istatistikleri bir arada görün.</li>
+            <li><strong>📜 Arşiv</strong>: Geçmiş maçları inceleyin.</li>
+            <li><strong>🚫 Cezalar</strong>: Ceza dağılımlarını ve karnelerini görün.</li>
+            <li><strong>🤝 Komandit</strong>: Partnerlerinizle olan performansınızı analiz edin.</li>
+        </ul>
+        <p><em>Not: Tüm istatistikler gerçek zamanlı olarak güncellenmektedir.</em></p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     try:
         stats, match_hist, chrono_matches, id_map = istatistikleri_hesapla()
         if not stats:
             st.warning("Henüz tamamlanmış maç verisi bulunmuyor.")
             return
+        
+        # Toplam maç sayısı: kronolojik maç sayısı (her toplantı 1 maç)
+        total_matches_all = len(chrono_matches)
         
         # Ana veri yapısı
         rows = []
@@ -1466,13 +1561,14 @@ def stats_interface():
             name = id_map.get(uid, f"Bilinmeyen({uid})")
             row = s.copy()
             row['Oyuncu'] = name
-            row['averaj'] = row['toplam_puan'] / row['mac_sayisi']
-            row['win_rate'] = (row['pozitif_mac_sayisi'] / row['mac_sayisi']) * 100
+            row['averaj'] = row['toplam_puan'] / row['mac_sayisi'] if row['mac_sayisi'] > 0 else 0
+            row['win_rate'] = (row['pozitif_mac_sayisi'] / row['mac_sayisi'] * 100) if row['mac_sayisi'] > 0 else 0
             row['king_orani'] = (row.get('king_kazanma', 0) / max(row.get('king_sayisi', 1), 1)) * 100
             
-            # Ceza oranları
-            total_ceza = sum(row['cezalar'].values())
-            row['ceza_ort'] = total_ceza / row['mac_sayisi'] if row['mac_sayisi'] > 0 else 0
+            # Ceza puanı oranları (toplam puan içindeki yüzdesi)
+            total_score = row['toplam_puan']
+            total_penalty = abs(row['toplam_ceza_puani'])
+            row['ceza_orani'] = (total_penalty / abs(total_score) * 100) if total_score < 0 else 0
             
             rows.append(row)
         
@@ -1567,11 +1663,16 @@ def stats_interface():
             disp = df_main[['mac_sayisi', 'toplam_puan', 'averaj', 'win_rate']].sort_values('averaj', ascending=False)
             disp.columns = ["Maç Sayısı", "Toplam Puan", "Ortalama", "Win Rate %"]
             
-            st.dataframe(
-                disp.style.format({
+            if HAS_MATPLOTLIB:
+                styled_disp = disp.style.format({
                     'Ortalama': '{:.1f}',
                     'Win Rate %': '{:.1f}%'
-                }).background_gradient(subset=['Ortalama'], cmap='RdYlGn'),
+                }).background_gradient(subset=['Ortalama'], cmap='RdYlGn')
+            else:
+                styled_disp = apply_simple_gradient(disp, subset=['Ortalama'])
+            
+            st.dataframe(
+                styled_disp,
                 use_container_width=True
             )
         
@@ -1637,6 +1738,7 @@ def stats_interface():
                             'wins': 0,
                             'total_score': 0,
                             'cezalar': defaultdict(int),
+                            'ceza_puanlari': defaultdict(float),
                             'king_wins': 0,
                             'king_games': 0,
                             'monthly': defaultdict(lambda: {'matches': 0, 'wins': 0, 'score': 0})
@@ -1659,10 +1761,13 @@ def stats_interface():
                         if uid == match.get('king_winner'):
                             ps['king_wins'] += 1
                     
-                    # Ceza istatistikleri
-                    if uid in match.get('ceza_detaylari', {}):
-                        for ceza_type, count in match['ceza_detaylari'][uid].items():
-                            ps['cezalar'][ceza_type] += count
+                    # Ceza istatistikleri (puan bazında)
+                    if uid in match.get('ceza_puan_detaylari', {}):
+                        for ceza_type, puan in match['ceza_puan_detaylari'][uid].items():
+                            ps['ceza_puanlari'][ceza_type] += puan
+                            # Sayı olarak da tutalım
+                            if ceza_type in match.get('ceza_detaylari', {}).get(uid, {}):
+                                ps['cezalar'][ceza_type] += match['ceza_detaylari'][uid][ceza_type]
                     
                     # Aylık istatistikler
                     ps['monthly'][month_key]['matches'] += 1
@@ -1682,43 +1787,85 @@ def stats_interface():
                 {most_wins[1]['wins']} kazanma / {most_wins[1]['matches']} maç (%{win_rate:.1f})
                 """)
                 
-                # En çok ceza alan
-                most_penalties = max(period_stats.items(), 
-                                   key=lambda x: sum(x[1]['cezalar'].values()))
-                worst_player = most_penalties[1]['isim']
-                total_penalties = sum(most_penalties[1]['cezalar'].values())
+                # En çok ceza puanı alan (toplam ceza puanı)
+                most_penalty_points = max(period_stats.items(), 
+                                        key=lambda x: sum(x[1]['ceza_puanlari'].values()))
+                worst_player = most_penalty_points[1]['isim']
+                total_penalty_points = sum(most_penalty_points[1]['ceza_puanlari'].values())
                 
                 st.error(f"""
                 **🚫 Ceza Kralı: {worst_player}**
-                Toplam {total_penalties} ceza
+                Toplam {total_penalty_points:.0f} ceza puanı
                 """)
                 
-                # Ceza dağılımı
-                st.subheader("🚫 Ceza Dağılımı")
+                # Her ceza türü için en çok puan alanı bul
+                st.subheader("🏆 Ceza Türü Liderleri")
                 
-                # Tüm cezaları topla
-                all_penalties = defaultdict(int)
+                # Tüm ceza türlerini topla
+                all_penalty_types = set()
+                for data in period_stats.values():
+                    all_penalty_types.update(data['ceza_puanlari'].keys())
+                
+                if all_penalty_types:
+                    # Her ceza türü için en çok puan alanı bul
+                    penalty_leaders = {}
+                    for ceza_type in all_penalty_types:
+                        leader = max(period_stats.items(), 
+                                   key=lambda x: x[1]['ceza_puanlari'].get(ceza_type, 0))
+                        penalty_leaders[ceza_type] = {
+                            'oyuncu': leader[1]['isim'],
+                            'puan': leader[1]['ceza_puanlari'].get(ceza_type, 0)
+                        }
+                    
+                    # 3 kolon halinde göster
+                    cols = st.columns(3)
+                    for i, (ceza_type, leader_info) in enumerate(penalty_leaders.items()):
+                        with cols[i % 3]:
+                            st.markdown(f"""
+                            <div class="stats-card">
+                                <h4>{ceza_type}</h4>
+                                <p><strong>{leader_info['oyuncu']}</strong></p>
+                                <p>{leader_info['puan']:.0f} puan</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                
+                # Ceza dağılımı (puan bazında)
+                st.subheader("🚫 Ceza Dağılımı (Puan)")
+                
+                # Tüm cezaları topla (puan)
+                all_penalties = defaultdict(float)
                 for uid, data in period_stats.items():
-                    for ceza_type, count in data['cezalar'].items():
-                        all_penalties[ceza_type] += count
+                    for ceza_type, puan in data['ceza_puanlari'].items():
+                        all_penalties[ceza_type] += puan
                 
-                if all_penalties and HAS_MATPLOTLIB:
-                    try:
-                        # Pie chart
-                        fig, ax = plt.subplots(figsize=(8, 8))
-                        
-                        labels = list(all_penalties.keys())
-                        sizes = list(all_penalties.values())
-                        colors = [OYUN_KURALLARI.get(k, {}).get('renk', '#FF0000') for k in labels]
-                        
-                        ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%',
-                              startangle=90, wedgeprops={'edgecolor': 'white'})
-                        ax.set_title('Ceza Türlerine Göre Dağılım')
-                        
-                        st.pyplot(fig)
-                        plt.close(fig)
-                    except Exception as e:
-                        st.warning(f"Grafik oluşturulamadı: {str(e)}")
+                if all_penalties:
+                    # Tablo olarak göster
+                    penalty_df = pd.DataFrame({
+                        'Ceza Türü': list(all_penalties.keys()),
+                        'Toplam Puan': list(all_penalties.values())
+                    }).sort_values('Toplam Puan')
+                    
+                    st.dataframe(penalty_df, use_container_width=True)
+                    
+                    # Grafik (matplotlib varsa)
+                    if HAS_MATPLOTLIB and all_penalties:
+                        try:
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            labels = list(all_penalties.keys())
+                            values = list(all_penalties.values())
+                            colors = [OYUN_KURALLARI.get(k, {}).get('renk', '#FF0000') for k in labels]
+                            
+                            bars = ax.bar(labels, values, color=colors)
+                            ax.set_xticks(range(len(labels)))
+                            ax.set_xticklabels(labels, rotation=45, ha='right')
+                            ax.set_ylabel('Toplam Ceza Puanı')
+                            ax.set_title('Ceza Türlerine Göre Toplam Ceza Puanı Dağılımı')
+                            ax.grid(True, alpha=0.3)
+                            
+                            st.pyplot(fig)
+                            plt.close(fig)
+                        except Exception as e:
+                            st.warning(f"Grafik oluşturulamadı: {str(e)}")
                 
                 # Detaylı tablo
                 st.subheader("📊 Dönemsel Performans")
@@ -1728,7 +1875,7 @@ def stats_interface():
                     if data['matches'] > 0:
                         win_rate = (data['wins'] / data['matches']) * 100
                         avg_score = data['total_score'] / data['matches']
-                        total_penalties = sum(data['cezalar'].values())
+                        total_penalty_points = sum(data['ceza_puanlari'].values())
                         
                         table_data.append({
                             'Oyuncu': data['isim'],
@@ -1736,18 +1883,24 @@ def stats_interface():
                             'Kazanma': data['wins'],
                             'Win Rate %': win_rate,
                             'Ortalama': avg_score,
-                            'Toplam Ceza': total_penalties,
+                            'Toplam Ceza Puanı': total_penalty_points,
                             'King Kazanma': data['king_wins']
                         })
                 
                 if table_data:
                     df_period = pd.DataFrame(table_data).sort_values('Win Rate %', ascending=False)
                     
-                    st.dataframe(
-                        df_period.style.format({
+                    if HAS_MATPLOTLIB:
+                        styled_df = df_period.style.format({
                             'Win Rate %': '{:.1f}%',
-                            'Ortalama': '{:.1f}'
-                        }).background_gradient(subset=['Win Rate %', 'Ortalama'], cmap='RdYlGn'),
+                            'Ortalama': '{:.1f}',
+                            'Toplam Ceza Puanı': '{:.0f}'
+                        }).background_gradient(subset=['Win Rate %', 'Ortalama'], cmap='RdYlGn')
+                    else:
+                        styled_df = apply_simple_gradient(df_period, subset=['Win Rate %', 'Ortalama'])
+                    
+                    st.dataframe(
+                        styled_df,
                         use_container_width=True
                     )
         
@@ -1759,16 +1912,20 @@ def stats_interface():
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                total_matches = df_main['mac_sayisi'].sum()
-                st.metric("Toplam Maç", total_matches)
+                st.metric("Toplam Maç", total_matches_all)
             
             with col2:
                 total_players = len(df_main)
                 st.metric("Toplam Oyuncu", total_players)
             
             with col3:
-                avg_wins = df_main['pozitif_mac_sayisi'].sum() / total_matches * 100
-                st.metric("Genel Win Rate", f"{avg_wins:.1f}%")
+                if total_matches_all > 0:
+                    total_wins = df_main['pozitif_mac_sayisi'].sum()
+                    # Her maçta 4 oyuncu var, her maçta 2 kazanan 2 kaybeden olabilir (KING hariç)
+                    avg_wins = (total_wins / (total_matches_all * 2)) * 100  # Yaklaşık hesaplama
+                    st.metric("Genel Win Rate", f"{avg_wins:.1f}%")
+                else:
+                    st.metric("Genel Win Rate", "0%")
             
             with col4:
                 total_kings = df_main['king_sayisi'].sum()
@@ -1829,23 +1986,30 @@ def stats_interface():
             st.subheader("📈 Tüm İstatistikler")
             
             display_cols = ['mac_sayisi', 'pozitif_mac_sayisi', 'toplam_puan', 'kkd', 
-                           'averaj', 'win_streak', 'king_kazanma']
+                           'averaj', 'win_streak', 'king_kazanma', 'toplam_ceza_puani', 'toplam_koz_puani']
             
             display_df = df_main[display_cols].copy()
             display_df.columns = ['Maç', 'Kazanma', 'Toplam Puan', 'KKD', 
-                                 'Ortalama', 'Aktif Seri', 'King Kazanma']
+                                 'Ortalama', 'Aktif Seri', 'King Kazanma', 'Toplam Ceza', 'Toplam Koz']
             
             # Sıralama seçeneği
             sort_by = st.selectbox("Sıralama Ölçütü", 
                                   ['KKD', 'Ortalama', 'Maç', 'Kazanma', 'Aktif Seri'])
             
-            st.dataframe(
-                display_df.sort_values(sort_by, ascending=False)
-                .style.format({
+            sorted_df = display_df.sort_values(sort_by, ascending=False)
+            
+            if HAS_MATPLOTLIB:
+                styled_df = sorted_df.style.format({
                     'KKD': '{:.0f}',
-                    'Ortalama': '{:.1f}'
-                })
-                .background_gradient(subset=['KKD', 'Ortalama'], cmap='RdYlGn'),
+                    'Ortalama': '{:.1f}',
+                    'Toplam Ceza': '{:.0f}',
+                    'Toplam Koz': '{:.0f}'
+                }).background_gradient(subset=['KKD', 'Ortalama'], cmap='RdYlGn')
+            else:
+                styled_df = apply_simple_gradient(sorted_df, subset=['KKD', 'Ortalama'])
+            
+            st.dataframe(
+                styled_df,
                 use_container_width=True
             )
         
@@ -1929,35 +2093,34 @@ def stats_interface():
                     )
                 
                 # Ceza detayları
-                if found_match.get('ceza_detaylari'):
-                    st.subheader("🚫 Ceza Detayları")
+                if found_match.get('ceza_puan_detaylari'):
+                    st.subheader("🚫 Ceza Detayları (Puan)")
                     
                     penalty_data = []
-                    for uid, penalties in found_match['ceza_detaylari'].items():
+                    for uid, penalties in found_match['ceza_puan_detaylari'].items():
                         player_name = id_map.get(uid, f"Bilinmeyen({uid})")
-                        for ceza_type, count in penalties.items():
-                            if count > 0:
+                        for ceza_type, puan in penalties.items():
+                            if puan < 0:  # Sadece ceza puanları
                                 penalty_data.append({
                                     'Oyuncu': player_name,
                                     'Ceza Türü': ceza_type,
-                                    'Sayı': count,
-                                    'Toplam Puan': count * OYUN_KURALLARI.get(ceza_type, {}).get('puan', 0)
+                                    'Puan': puan
                                 })
                     
                     if penalty_data:
                         penalty_df = pd.DataFrame(penalty_data)
                         st.dataframe(
-                            penalty_df.sort_values('Toplam Puan').style.format({
-                                'Toplam Puan': '{:.0f}'
+                            penalty_df.sort_values('Puan').style.format({
+                                'Puan': '{:.0f}'
                             }),
                             use_container_width=True
                         )
         
         # 6. CEZALAR
         with tabs[5]:
-            st.subheader("🚫 Ceza İstatistikleri")
+            st.subheader("🚫 Ceza İstatistikleri (Puan Bazında)")
             
-            # Ceza verilerini hazırla
+            # Ceza verilerini hazırla (puan bazında)
             ceza_data = []
             
             for uid, s in stats.items():
@@ -1966,70 +2129,80 @@ def stats_interface():
                     
                 player_name = id_map.get(uid, f"Bilinmeyen({uid})")
                 
-                # Toplam ceza sayısı
-                total_penalties = sum(s['cezalar'].values())
+                # Toplam ceza puanı
+                total_penalty_points = sum(s['ceza_puanlari'].values())
                 
-                if total_penalties > 0 or True:  # Tüm oyuncuları göster
-                    row = {'Oyuncu': player_name, 'Maç': s['mac_sayisi'], 'Toplam Ceza': total_penalties}
+                if total_penalty_points < 0 or True:  # Tüm oyuncuları göster
+                    row = {'Oyuncu': player_name, 'Maç': s['mac_sayisi'], 'Toplam Ceza Puanı': total_penalty_points}
                     
-                    # Her ceza türü için
+                    # Her ceza türü için puan
                     for ceza_type in OYUN_KURALLARI:
-                        count = s['cezalar'].get(ceza_type, 0)
+                        puan = s['ceza_puanlari'].get(ceza_type, 0)
                         # Maç başına ortalama
-                        avg_per_match = count / s['mac_sayisi'] if s['mac_sayisi'] > 0 else 0
-                        row[ceza_type] = f"{count} ({avg_per_match:.2f})"
+                        avg_per_match = puan / s['mac_sayisi'] if s['mac_sayisi'] > 0 else 0
+                        row[ceza_type] = f"{puan:.0f} ({avg_per_match:.1f})"
                     
                     ceza_data.append(row)
             
             if ceza_data:
                 ceza_df = pd.DataFrame(ceza_data).set_index('Oyuncu')
                 
-                # En çok ceza alanlar
-                st.subheader("🏆 Ceza Liderleri")
+                # En çok ceza puanı alanlar
+                st.subheader("🏆 Ceza Puanı Liderleri")
                 
-                top_penalty = ceza_df.nlargest(5, 'Toplam Ceza')[['Toplam Ceza', 'Maç']]
+                top_penalty = ceza_df.nsmallest(5, 'Toplam Ceza Puanı')[['Toplam Ceza Puanı', 'Maç']]
+                
+                if HAS_MATPLOTLIB:
+                    styled_top_penalty = top_penalty.style.background_gradient(subset=['Toplam Ceza Puanı'], cmap='Reds')
+                else:
+                    styled_top_penalty = top_penalty.style
+                
                 st.dataframe(
-                    top_penalty.style.background_gradient(subset=['Toplam Ceza'], cmap='Reds'),
+                    styled_top_penalty,
                     use_container_width=True
                 )
                 
-                # Ceza türlerine göre dağılım
-                st.subheader("📊 Ceza Türü Dağılımı")
+                # Ceza türlerine göre dağılım (puan)
+                st.subheader("📊 Ceza Türü Dağılımı (Puan)")
                 
                 # Grafik için veri hazırla
                 penalty_types = []
-                penalty_counts = []
-                colors = []
+                penalty_points = []
                 
                 for uid, s in stats.items():
                     if s['mac_sayisi'] > 0:
-                        for ceza_type, count in s['cezalar'].items():
-                            if count > 0:
+                        for ceza_type, puan in s['ceza_puanlari'].items():
+                            if puan < 0:  # Sadece negatif cezalar
                                 penalty_types.append(ceza_type)
-                                penalty_counts.append(count)
-                                colors.append(OYUN_KURALLARI.get(ceza_type, {}).get('renk', '#FF0000'))
+                                penalty_points.append(abs(puan))  # Mutlak değer
                 
-                if penalty_counts and HAS_MATPLOTLIB:
+                if penalty_points and HAS_MATPLOTLIB:
                     try:
                         # Bar chart
                         fig, ax = plt.subplots(figsize=(10, 6))
                         
-                        # Benzersiz türleri grupla
-                        unique_types = list(set(penalty_types))
-                        type_counts = [penalty_counts[i] for i in range(len(penalty_types))]
+                        # Benzersiz türleri grupla ve toplam puanları hesapla
+                        unique_types = {}
+                        for i, ceza_type in enumerate(penalty_types):
+                            if ceza_type not in unique_types:
+                                unique_types[ceza_type] = 0
+                            unique_types[ceza_type] += penalty_points[i]
                         
                         if unique_types:
-                            bars = ax.bar(unique_types, type_counts, 
-                                         color=[OYUN_KURALLARI.get(t, {}).get('renk', '#FF0000') for t in unique_types])
+                            labels = list(unique_types.keys())
+                            values = list(unique_types.values())
+                            
+                            bars = ax.bar(labels, values, 
+                                         color=[OYUN_KURALLARI.get(t, {}).get('renk', '#FF0000') for t in labels])
                             
                             # Değerleri üzerine yaz
-                            for i, (t, c) in enumerate(zip(unique_types, type_counts)):
-                                ax.text(i, c + 0.1, str(c), ha='center', va='bottom', fontweight='bold')
+                            for i, (t, p) in enumerate(zip(labels, values)):
+                                ax.text(i, p + 0.5, f"{p:.0f}", ha='center', va='bottom', fontweight='bold')
                             
-                            ax.set_xticks(range(len(unique_types)))
-                            ax.set_xticklabels(unique_types, rotation=45, ha='right')
-                            ax.set_ylabel('Toplam Sayı')
-                            ax.set_title('Ceza Türlerine Göre Toplam Dağılım')
+                            ax.set_xticks(range(len(labels)))
+                            ax.set_xticklabels(labels, rotation=45, ha='right')
+                            ax.set_ylabel('Toplam Ceza Puanı')
+                            ax.set_title('Ceza Türlerine Göre Toplam Ceza Puanı Dağılımı')
                             ax.grid(True, alpha=0.3)
                             
                             st.pyplot(fig)
@@ -2038,15 +2211,20 @@ def stats_interface():
                         st.warning(f"Grafik oluşturulamadı: {str(e)}")
                 
                 # Detaylı tablo
-                st.subheader("📋 Detaylı Ceza Karnesi")
+                st.subheader("📋 Detaylı Ceza Karnesi (Puan)")
                 
                 # Sadece sayısal değerleri göster
-                display_cols = ['Maç', 'Toplam Ceza'] + list(OYUN_KURALLARI.keys())
+                display_cols = ['Maç', 'Toplam Ceza Puanı'] + list(OYUN_KURALLARI.keys())
                 if set(display_cols).issubset(ceza_df.columns):
-                    display_df = ceza_df[display_cols].sort_values('Toplam Ceza', ascending=False)
+                    display_df = ceza_df[display_cols].sort_values('Toplam Ceza Puanı')
+                    
+                    if HAS_MATPLOTLIB:
+                        styled_display_df = display_df.style.background_gradient(subset=['Toplam Ceza Puanı'], cmap='Reds')
+                    else:
+                        styled_display_df = display_df.style
                     
                     st.dataframe(
-                        display_df.style.background_gradient(subset=['Toplam Ceza'], cmap='Reds'),
+                        styled_display_df,
                         use_container_width=True,
                         height=min(600, 150 + len(display_df) * 35)
                     )
@@ -2061,79 +2239,118 @@ def stats_interface():
             
             current_user_id = st.session_state.get("user_id")
             
-            if current_user_id and current_user_id in stats:
-                user_stats = stats[current_user_id]
-                user_name = id_map.get(current_user_id, "Bilinmeyen")
-                
-                st.markdown(f"**{user_name}** için partner analizi:")
-                
-                partner_data = []
-                
-                for partner_id, partner_stats in user_stats.get('partnerler', {}).items():
-                    partner_name = id_map.get(partner_id, f"Bilinmeyen({partner_id})")
-                    matches_together = partner_stats.get('birlikte_mac', 0)
-                    wins_together = partner_stats.get('beraber_kazanma', 0)
+            if current_user_id:
+                if current_user_id in stats:
+                    user_stats = stats[current_user_id]
+                    user_name = id_map.get(current_user_id, "Bilinmeyen")
                     
-                    if matches_together > 0:
-                        win_rate = (wins_together / matches_together) * 100
+                    st.markdown(f"**{user_name}** için partner analizi:")
+                    
+                    # Partner verilerini oluştur (mevcut maçlardan)
+                    partner_data = []
+                    
+                    # Tüm maçları tara ve partnerleri bul
+                    for match in chrono_matches:
+                        if current_user_id in match.get('ids', []):
+                            # Bu maçtaki diğer oyuncuları bul
+                            for partner_id in match['ids']:
+                                if partner_id != current_user_id:
+                                    partner_name = id_map.get(partner_id, f"Bilinmeyen({partner_id})")
+                                    
+                                    # Partnerin bu maçtaki durumunu kontrol et
+                                    is_user_winner = current_user_id in match.get('kazananlar', [])
+                                    is_partner_winner = partner_id in match.get('kazananlar', [])
+                                    
+                                    # Partneri bul veya oluştur
+                                    found = False
+                                    for pd in partner_data:
+                                        if pd['Partner'] == partner_name:
+                                            pd['Birlikte Maç'] += 1
+                                            if is_user_winner and is_partner_winner:
+                                                pd['Birlikte Kazanma'] += 1
+                                            found = True
+                                            break
+                                    
+                                    if not found:
+                                        partner_data.append({
+                                            'Partner': partner_name,
+                                            'Birlikte Maç': 1,
+                                            'Birlikte Kazanma': 1 if is_user_winner and is_partner_winner else 0,
+                                            'Win Rate %': 0,
+                                            'Başarı': 'Orta'
+                                        })
+                    
+                    if partner_data:
+                        # Win rate hesapla
+                        for pd in partner_data:
+                            if pd['Birlikte Maç'] > 0:
+                                pd['Win Rate %'] = (pd['Birlikte Kazanma'] / pd['Birlikte Maç']) * 100
+                                if pd['Win Rate %'] > 60:
+                                    pd['Başarı'] = 'Yüksek'
+                                elif pd['Win Rate %'] > 40:
+                                    pd['Başarı'] = 'Orta'
+                                else:
+                                    pd['Başarı'] = 'Düşük'
                         
-                        partner_data.append({
-                            'Partner': partner_name,
-                            'Birlikte Maç': matches_together,
-                            'Birlikte Kazanma': wins_together,
-                            'Win Rate %': win_rate,
-                            'Başarı': 'Yüksek' if win_rate > 60 else ('Orta' if win_rate > 40 else 'Düşük')
-                        })
-                
-                if partner_data:
-                    partner_df = pd.DataFrame(partner_data).sort_values('Win Rate %', ascending=False)
-                    
-                    # En iyi partner
-                    best_partner = partner_df.iloc[0]
-                    st.success(f"""
-                    **🤝 En İyi Partner: {best_partner['Partner']}**
-                    {best_partner['Birlikte Kazanma']} kazanma / {best_partner['Birlikte Maç']} maç
-                    (%{best_partner['Win Rate %']:.1f} başarı)
-                    """)
-                    
-                    # Tablo
-                    st.dataframe(
-                        partner_df.style.format({
-                            'Win Rate %': '{:.1f}%'
-                        }).background_gradient(subset=['Win Rate %'], cmap='RdYlGn'),
-                        use_container_width=True
-                    )
-                    
-                    # Partner grafiği
-                    if HAS_MATPLOTLIB:
-                        try:
-                            fig, ax = plt.subplots(figsize=(10, 6))
+                        partner_df = pd.DataFrame(partner_data).sort_values('Win Rate %', ascending=False)
+                        
+                        # En iyi partner
+                        if not partner_df.empty:
+                            best_partner = partner_df.iloc[0]
+                            st.success(f"""
+                            **🤝 En İyi Partner: {best_partner['Partner']}**
+                            {best_partner['Birlikte Kazanma']} kazanma / {best_partner['Birlikte Maç']} maç
+                            (%{best_partner['Win Rate %']:.1f} başarı)
+                            """)
                             
-                            x_pos = range(len(partner_df))
-                            colors = ['#FFD700', '#C0C0C0', '#CD7F32'] + ['#28a745'] * (len(partner_df) - 3)
+                            # Tablo
+                            if HAS_MATPLOTLIB:
+                                styled_partner_df = partner_df.style.format({
+                                    'Win Rate %': '{:.1f}%'
+                                }).background_gradient(subset=['Win Rate %'], cmap='RdYlGn')
+                            else:
+                                styled_partner_df = apply_simple_gradient(partner_df, subset=['Win Rate %'])
                             
-                            bars = ax.bar(x_pos, partner_df['Win Rate %'], color=colors)
+                            st.dataframe(
+                                styled_partner_df,
+                                use_container_width=True
+                            )
                             
-                            for i, (idx, row) in enumerate(partner_df.iterrows()):
-                                ax.text(i, row['Win Rate %'] + 1, f"{row['Win Rate %']:.1f}%", 
-                                       ha='center', va='bottom', fontweight='bold')
-                            
-                            ax.set_xticks(x_pos)
-                            ax.set_xticklabels(partner_df['Partner'], rotation=45, ha='right')
-                            ax.set_ylabel('Win Rate %')
-                            ax.set_title('Partnerlere Göre Win Rate')
-                            ax.grid(True, alpha=0.3)
-                            
-                            st.pyplot(fig)
-                            plt.close(fig)
-                        except Exception as e:
-                            st.warning(f"Grafik oluşturulamadı: {str(e)}")
+                            # Partner grafiği
+                            if HAS_MATPLOTLIB and not partner_df.empty:
+                                try:
+                                    fig, ax = plt.subplots(figsize=(10, 6))
+                                    
+                                    x_pos = range(len(partner_df))
+                                    colors = ['#FFD700', '#C0C0C0', '#CD7F32'] + ['#28a745'] * (len(partner_df) - 3)
+                                    
+                                    bars = ax.bar(x_pos, partner_df['Win Rate %'], color=colors)
+                                    
+                                    for i, (idx, row) in enumerate(partner_df.iterrows()):
+                                        ax.text(i, row['Win Rate %'] + 1, f"{row['Win Rate %']:.1f}%", 
+                                               ha='center', va='bottom', fontweight='bold')
+                                    
+                                    ax.set_xticks(x_pos)
+                                    ax.set_xticklabels(partner_df['Partner'], rotation=45, ha='right')
+                                    ax.set_ylabel('Win Rate %')
+                                    ax.set_title('Partnerlere Göre Win Rate')
+                                    ax.grid(True, alpha=0.3)
+                                    
+                                    st.pyplot(fig)
+                                    plt.close(fig)
+                                except Exception as e:
+                                    st.warning(f"Grafik oluşturulamadı: {str(e)}")
+                        else:
+                            st.info("Henüz partner verisi bulunmuyor.")
+                    else:
+                        st.info("Henüz partner verisi bulunmuyor. Daha fazla maç oynadıkça burada görünecektir.")
                 else:
-                    st.info("Henüz partner verisi bulunmuyor.")
+                    st.info("Henüz istatistiğiniz bulunmuyor. Maç oynadıkça burada görünecektir.")
             else:
                 st.warning("Partner analizi için giriş yapmalısınız.")
     except Exception as e:
         st.error(f"İstatistikler yüklenirken hata oluştu: {str(e)}")
+        st.info("Lütfen sayfayı yenileyin veya daha sonra tekrar deneyin.")
 
 def profile_interface():
     st.markdown(f"<h2>👤 Profil: {st.session_state['username']}</h2>", unsafe_allow_html=True)
@@ -2213,7 +2430,7 @@ def profile_interface():
                     except Exception as e:
                         st.warning(f"Grafik oluşturulamadı: {str(e)}")
             
-            # Aylık performans
+            # Aylık performans - DÜZELTİLDİ
             st.subheader("📅 Aylık Performans")
             
             if s.get('aylik_performans'):
@@ -2238,18 +2455,18 @@ def profile_interface():
             st.divider()
             st.subheader("🎓 Akıllı Koç Önerileri")
             
-            if s['mac_sayisi'] > 5:
-                # En çok ceza alınan oyun
-                if s['cezalar']:
-                    worst_ceza = max(s['cezalar'].items(), key=lambda x: x[1])
+            if s['mac_sayisi'] > 0:
+                # En çok ceza alınan oyun (puan bazında)
+                if s['ceza_puanlari']:
+                    worst_ceza = min(s['ceza_puanlari'].items(), key=lambda x: x[1])
                     ceza_name = worst_ceza[0]
-                    ceza_count = worst_ceza[1]
+                    ceza_puan = worst_ceza[1]
                     
                     if ceza_name in VIDEO_MAP:
                         st.warning(f"""
                         **⚠️ Gelişim Alanı: {ceza_name}**
                         
-                        Toplam {ceza_count} kez bu cezayı aldınız.
+                        Toplam {ceza_puan:.0f} puan ceza aldınız.
                         Bu konuda pratik yapmanız önerilir.
                         """)
                         
