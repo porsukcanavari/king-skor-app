@@ -5,49 +5,36 @@ from datetime import datetime, timedelta
 from utils.database import get_users_map, save_match_to_sheet
 from utils.config import OYUN_KURALLARI
 
-def inject_paper_css():
+def inject_white_box_css():
     st.markdown("""
     <style>
-        /* 1. PARŞÖMEN ZEMİN (Konteyner) */
-        /* Streamlit'in border=True kutusunu yakalayıp kağıda çeviriyoruz */
+        /* 1. KUTUYU BEMBEYAZ YAP */
         div[data-testid="stVerticalBlockBorderWrapper"] {
-            background-color: #fcfbf4;
-            background-image: url("https://www.transparenttextures.com/patterns/cream-paper.png");
-            border: 2px solid #2c1e12 !important;
-            border-radius: 5px;
+            background-color: #ffffff !important; /* BEMBEYAZ */
+            border: 1px solid #ccc !important;
             padding: 20px !important;
-            box-shadow: 0 0 15px rgba(0,0,0,0.5);
-            /* Dark mode gelse bile burayı aydınlık yap */
-            color-scheme: light !important; 
-        }
-
-        /* 2. YAZILAR VE BAŞLIKLAR */
-        div[data-testid="stVerticalBlockBorderWrapper"] * {
-            color: #2c1e12 !important; /* Mürekkep rengi */
-            font-family: 'Courier New', Courier, monospace !important;
-            font-weight: 600 !important;
-        }
-
-        /* 3. INPUT KUTULARI (HAYALET MODU) */
-        /* Kutunun kendisini yok et, sadece alt çizgi kalsın */
-        div[data-testid="stVerticalBlockBorderWrapper"] input {
-            background-color: rgba(255,255,255,0.3) !important;
-            border: none !important;
-            border-bottom: 2px solid #aaa !important; /* Satır çizgisi */
-            border-radius: 0 !important;
+            border-radius: 5px !important;
+            
+            /* İÇİNDEKİLERİ AYDINLIK MODA ZORLA */
+            /* Bu sayede siyah tema olsa bile içindeki yazılar siyah olur */
+            color-scheme: light !important;
             color: black !important;
-            text-align: center !important;
-            font-size: 1.2em !important;
-            height: 40px !important;
-            padding: 0 !important;
-            margin: 0 !important;
         }
 
-        /* Tıklayınca çizgi kalınlaşsın */
-        div[data-testid="stVerticalBlockBorderWrapper"] input:focus {
-            border-bottom: 3px solid #8b0000 !important;
-            box-shadow: none !important;
-            background-color: rgba(255,255,255,0.6) !important;
+        /* 2. KUTU İÇİNDEKİ TÜM METİNLERİ SİYAH YAP */
+        div[data-testid="stVerticalBlockBorderWrapper"] * {
+            color: black !important;
+            font-family: Arial, sans-serif !important; /* Düz yazı tipi */
+        }
+
+        /* 3. INPUT (SAYI GİRİŞ) KUTULARI */
+        /* Standart, temiz görünüm */
+        div[data-testid="stVerticalBlockBorderWrapper"] input {
+            background-color: #f0f2f6 !important; /* Hafif gri kutu */
+            color: black !important;
+            border: 1px solid #ccc !important;
+            border-radius: 4px !important;
+            text-align: center !important;
         }
 
         /* 4. ARTI / EKSİ OKLARINI SİL */
@@ -58,63 +45,37 @@ def inject_paper_css():
         div[data-testid="stNumberInputStepDown"], 
         div[data-testid="stNumberInputStepUp"] { display: none !important; }
 
-        /* Başlık Stili */
-        .sheet-header {
-            text-align: center;
-            border-bottom: 3px double #2c1e12;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
+        /* Başlıklar */
         .sheet-title {
-            font-size: 2.2em;
-            color: #8b0000 !important;
-            font-weight: 900;
-            text-transform: uppercase;
-            margin: 0;
-        }
-
-        /* Tablo Başlıkları */
-        .col-header {
-            font-weight: 900;
             text-align: center;
-            border-bottom: 2px solid #2c1e12;
-            padding-bottom: 5px;
-            margin-bottom: 5px;
-            font-size: 1.1em;
-        }
-
-        .row-label {
+            font-size: 2em;
             font-weight: bold;
-            font-size: 1.1em;
-            padding-top: 10px;
-            display: block;
-        }
-
-        /* Ayırıcı */
-        .separator {
-            text-align: center;
-            font-weight: 900;
-            margin: 20px 0;
-            border-top: 2px dashed #2c1e12;
-            padding-top: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid black;
         }
         
-        /* Hata Mesajı */
-        .error-badge {
-            color: #d93025 !important;
-            font-size: 0.8em;
+        .col-header {
             font-weight: bold;
-            border-top: 1px solid #d93025;
             text-align: center;
+            border-bottom: 1px solid black;
+            padding-bottom: 5px;
+        }
+
+        /* Hata Mesajı */
+        .error-text {
+            color: red !important;
+            font-weight: bold;
+            font-size: 0.9em;
         }
 
     </style>
     """, unsafe_allow_html=True)
 
 def game_interface():
-    inject_paper_css()
+    inject_white_box_css()
     id_to_name, name_to_id, _ = get_users_map()
     
+    # Session State
     if "sheet_active" not in st.session_state: st.session_state["sheet_active"] = False
     if "current_match_name" not in st.session_state: st.session_state["current_match_name"] = "King_Maci"
     if "match_date" not in st.session_state: st.session_state["match_date"] = datetime.now().strftime("%d.%m.%Y")
@@ -145,24 +106,22 @@ def game_interface():
     # --- 2. DEFTER EKRANI ---
     players = st.session_state["players"]
 
-    # BU KUTU PARŞÖMEN OLACAK (CSS SAYESİNDE)
+    # --- İŞTE BU KUTU BEMBEYAZ OLACAK ---
     with st.container(border=True):
         
         # Başlık
         st.markdown(f"""
-        <div class="sheet-header">
-            <h1 class="sheet-title">{st.session_state['current_match_name']}</h1>
-            <div style="font-style:italic; margin-top:5px;">📅 {st.session_state['match_date']}</div>
-        </div>
+        <div class="sheet-title">{st.session_state['current_match_name']}</div>
+        <div style="text-align:center; margin-bottom:20px;">📅 {st.session_state['match_date']}</div>
         """, unsafe_allow_html=True)
 
-        # Tablo Başlıkları
+        # Başlıklar
         c = st.columns([1.5, 1, 1, 1, 1])
         with c[0]: st.markdown('<div class="col-header" style="text-align:left">OYUN TÜRÜ</div>', unsafe_allow_html=True)
         for i, p in enumerate(players):
             with c[i+1]: st.markdown(f'<div class="col-header">{p}</div>', unsafe_allow_html=True)
 
-        # Satırlar
+        # Satır Yapısı
         rows_structure = []
         for oyun_adi, kural in OYUN_KURALLARI.items():
             if "Koz" in oyun_adi: continue
@@ -184,12 +143,12 @@ def game_interface():
 
         for r_info in rows_structure:
             if r_info.get("type") == "sep":
-                st.markdown(f'<div class="separator">{r_info["label"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="text-align:center; margin:15px 0; border-top:1px dashed black; padding-top:5px; font-weight:bold;">{r_info["label"]}</div>', unsafe_allow_html=True)
                 continue
 
             c = st.columns([1.5, 1, 1, 1, 1])
             with c[0]:
-                st.markdown(f'<div class="row-label">{r_info["label"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="padding-top:10px; font-weight:bold;">{r_info["label"]}</div>', unsafe_allow_html=True)
             
             curr_vals = []
             for idx, p in enumerate(players):
@@ -200,12 +159,11 @@ def game_interface():
                     val = st.number_input("h", min_value=0, max_value=13, step=1, key=key, label_visibility="collapsed")
                     curr_vals.append(val)
             
-            # Kontrol
             row_sum = sum(curr_vals)
             if row_sum > 0: has_data = True
             
             if row_sum != 0 and row_sum != r_info["limit"]:
-                st.markdown(f'<div class="error-badge">⚠️ HATA ({row_sum}/{r_info["limit"]})</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="error-text">⚠️ HATA ({row_sum}/{r_info["limit"]})</div>', unsafe_allow_html=True)
                 errors.append(f"{r_info['label']} hatası")
             
             if row_sum == r_info["limit"]:
