@@ -2,58 +2,81 @@
 import streamlit as st
 
 def game_interface():
-    st.header("🏎️ Parşömen Kaplama Testi")
+    st.header("🧱 Astar Mantığı: Tam Kaplama")
 
     # URL'ler
     araba_url = "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?q=80&w=1000&auto=format&fit=crop"
-    kagit_doku_url = "https://www.transparenttextures.com/patterns/cream-paper.png" # Eski kağıt deseni
+    kagit_doku_url = "https://www.transparenttextures.com/patterns/cream-paper.png" 
 
-    # HTML ve CSS ile Katmanlı Yapı (Overlay)
     st.markdown(f"""
     <style>
-        /* 1. Kapsayıcı Kutu */
-        .resim-kutusu {{
-            position: relative; /* İçindekileri üst üste bindirmek için şart */
+        /* Kapsayıcı Kutu */
+        .resim-cercevesi {{
+            position: relative; /* İçindekileri üst üste bindirmek için */
             display: inline-block;
             width: 100%;
-            max-width: 700px; /* Resim çok devasa olmasın */
-            border: 5px solid #2c1e12; /* Çerçeve */
-            box-shadow: 10px 10px 20px rgba(0,0,0,0.5);
+            max-width: 700px;
+            border: 3px solid #2c1e12;
+            box-shadow: 10px 10px 15px rgba(0,0,0,0.5);
+            overflow: hidden; /* Dışarı taşanları kes */
         }}
 
-        /* 2. Alttaki Araba Resmi */
-        .araba-img {{
+        /* 1. KATMAN: ASTAR (ARABA) */
+        /* Bu resim sadece kutunun boyutunu belirler, görünmeyecek */
+        .astar-resim {{
             display: block;
             width: 100%;
             height: auto;
-            /* Arabayı biraz sarartalım ki kağıtla uyumlu olsun (Sepia) */
-            filter: sepia(0.6) contrast(1.2) brightness(0.9);
         }}
 
-        /* 3. Üstteki Parşömen Dokusu (Sihir Burada) */
-        .doku-katmani {{
+        /* 2. KATMAN: SIVA (PARŞÖMEN) */
+        /* Bu katman alttaki resmin üzerini tamamen örter */
+        .kaplama {{
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
             
-            /* Doku Resmi */
-            background-image: url('{kagit_doku_url}');
+            /* Doku ve Renk */
+            background-image: url('{kagit_doku_url}'); 
+            background-color: #fdfbf7; /* KESİN ÇÖZÜM: Krem rengi boya */
             
-            /* SIKINTI ÇÖZÜCÜ AYAR: */
-            mix-blend-mode: multiply; /* Resmi alttaki resimle "Çarp". Kağıt efekti verir. */
-            opacity: 0.8; /* Dokunun gücü */
-            pointer-events: none; /* Tıklamalar alttaki resme geçsin */
+            /* Görünürlük Ayarları */
+            opacity: 1; /* %100 Görünür (Tamamen Mat) */
+            z-index: 10; /* En üstte dur */
+            
+            /* İçine yazı yazalım ki kağıt olduğu belli olsun */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #2c1e12;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 2em;
+            text-align: center;
+            
+            /* Geçiş efekti (Mouse ile gelince görmek istersen diye) */
+            transition: opacity 0.5s ease;
         }}
+
+        /* SÜRPRİZ: Mouse ile üzerine gelince astarı göster (İstemezsen sil) */
+        .resim-cercevesi:hover .kaplama {{
+            opacity: 0.1; /* %90 şeffaflaş */
+            cursor: pointer;
+        }}
+
     </style>
 
-    <div class="resim-kutusu">
-        <img src="{araba_url}" class="araba-img">
+    <div class="resim-cercevesi">
+        <img src="{araba_url}" class="astar-resim">
         
-        <div class="doku-katmani"></div>
+        <div class="kaplama">
+            GİZLİ GÖREV<br>
+            <span style="font-size:0.5em">(Üzerine Gel)</span>
+        </div>
     </div>
     
     """, unsafe_allow_html=True)
     
-    st.info("👆 Yukarıdaki resim normalde modern bir araba ama CSS ile üzerine kağıt dokusu bindirdik.")
+    st.info("Bu kutunun boyutunu içindeki görünmez araba belirliyor. Üzeri tamamen parşömenle sıvandı.")
