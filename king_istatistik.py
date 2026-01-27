@@ -658,8 +658,7 @@ def extract_id_from_cell(cell_value, name_to_id_map):
     return None
 
 def istatistikleri_hesapla():
-    try:
-        import pandas as pd  # Fonksiyon içinde tekrar import
+
     id_to_name, name_to_id, _ = get_users_map()
     _, raw_data = fetch_all_data()
     
@@ -1526,6 +1525,14 @@ def kkd_leaderboard_interface():
 
 def stats_interface():
     st.markdown("<h2>📊 İstatistik Merkezi</h2>", unsafe_allow_html=True)
+    
+    # Pandas kontrolü - EKLENDİ
+    try:
+        import pandas as pd
+    except ImportError as e:
+        st.error(f"Pandas kütüphanesi yüklenemedi: {e}")
+        return
+    
     
     # Açıklama metni
     st.markdown("""
@@ -2729,4 +2736,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
