@@ -5,116 +5,200 @@ from datetime import datetime, timedelta
 from utils.database import get_users_map, save_match_to_sheet
 from utils.config import OYUN_KURALLARI
 
-# --- 1. CSS: SADECE ORTA ALAN PARŞÖMEN ---
+# --- ÖZEL CSS: TABLOYA ÖZGÜ PARŞÖMEN STİLİ ---
 def inject_paper_css():
     st.markdown("""
     <style>
-        /* 1. KAĞIT KUTUSU (Paper Container) */
-        /* Sadece bu sınıfı kullanan alan kağıt gibi görünecek */
-        .paper-sheet {
-            background-color: #fdfbf7;
-            background-image: url("https://www.transparenttextures.com/patterns/cream-paper.png");
-            padding: 40px;
-            border-radius: 2px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5); /* Siyah zemin üzerinde parlasın */
-            margin: 20px auto;
-            max-width: 950px;
-            color: #2c1e12; /* Mürekkep rengi */
-            font-family: 'Courier New', Courier, monospace;
-            border: 1px solid #d3c6a0;
-            position: relative;
-        }
-
-        /* 2. BAŞLIKLAR */
-        .paper-header {
-            text-align: center;
-            border-bottom: 3px double #2c1e12;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-        }
-        .paper-title {
-            font-size: 2.2em;
-            color: #8b0000;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            margin: 0;
-        }
-
-        /* 3. INPUT (SAYI GİRİŞ) KUTULARI */
-        /* + ve - butonlarını yok etme operasyonu */
-        div[data-testid="stNumberInput"] input {
-            background-color: transparent !important;
-            border: none !important;
-            border-bottom: 1px dashed #aaa !important;
-            color: #2c1e12 !important; /* Koyu yazı */
-            font-family: 'Courier New', Courier, monospace !important;
-            font-weight: bold !important;
-            text-align: center !important;
-            padding: 0 !important;
-            height: 35px !important;
-            font-size: 1.2em !important;
-            -moz-appearance: textfield; /* Firefox okları gizle */
-        }
-        
-        /* Chrome, Safari, Edge, Opera için okları gizle */
+        /* 1. ARTI/EKSİ BUTONLARINI GİZLE */
         input::-webkit-outer-spin-button,
         input::-webkit-inner-spin-button {
             -webkit-appearance: none;
             margin: 0;
         }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+        div[data-testid="stNumberInputStepDown"],
+        div[data-testid="stNumberInputStepUp"] {
+            display: none !important;
+        }
 
-        /* Input focus (tıklayınca) */
-        div[data-testid="stNumberInput"] input:focus {
-            background-color: rgba(255, 215, 0, 0.1) !important;
-            border-bottom: 2px solid #8b0000 !important;
+        /* 2. TABLO KONTEYNERİ - DOĞRUDAN HEDEFLEME */
+        /* Streamlit'in tablo içindeki özel div'ini hedefle */
+        div[data-testid="stVerticalBlock"] > div[style*="flex"]:has(> div[data-testid="column"]) {
+            background: linear-gradient(to bottom, #f7f3e8 0%, #f2e9d8 100%) !important;
+            background-image: 
+                linear-gradient(to bottom, rgba(247, 243, 232, 0.9) 0%, rgba(242, 233, 216, 0.9) 100%),
+                url("https://www.transparenttextures.com/patterns/cream-paper.png") !important;
+            border: 1px solid #d4c4a8 !important;
+            padding: 25px 30px !important;
+            border-radius: 3px !important;
+            box-shadow: 
+                0 5px 20px rgba(0, 0, 0, 0.3),
+                inset 0 0 50px rgba(0, 0, 0, 0.05) !important;
+            margin: 20px 0 !important;
+        }
+
+        /* 3. BAŞLIKLAR İÇİN STİL */
+        div[data-testid="stVerticalBlock"] > div:has(> .sheet-title) {
+            background: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
             box-shadow: none !important;
         }
 
-        /* Streamlit'in kendi +/- butonlarını gizle */
-        button[kind="secondaryFormSubmit"] { display: none !important; }
-        div[data-testid="stNumberInputStepDown"] { display: none !important; }
-        div[data-testid="stNumberInputStepUp"] { display: none !important; }
+        /* 4. INPUT STİLLERİ (TABLO İÇİNDEKİ) */
+        div[data-testid="stVerticalBlock"] > div[style*="flex"]:has(> div[data-testid="column"]) input[type="number"] {
+            background-color: rgba(255, 255, 255, 0.8) !important;
+            border: 2px solid #8d6e63 !important;
+            border-radius: 4px !important;
+            color: #3e2723 !important;
+            font-family: 'Courier New', monospace !important;
+            font-weight: bold !important;
+            font-size: 1.2em !important;
+            text-align: center !important;
+            height: 45px !important;
+            width: 100% !important;
+            padding: 8px !important;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1) !important;
+        }
 
-        /* 4. TABLO BAŞLIKLARI VE SATIRLAR */
-        .player-header {
+        div[data-testid="stVerticalBlock"] > div[style*="flex"]:has(> div[data-testid="column"]) input[type="number"]:focus {
+            background-color: rgba(255, 253, 231, 0.95) !important;
+            border-color: #5d4037 !important;
+            box-shadow: 
+                inset 0 2px 4px rgba(0,0,0,0.1),
+                0 0 0 2px rgba(93, 64, 55, 0.2) !important;
+            outline: none !important;
+        }
+
+        /* 5. TABLO BAŞLIĞI - TARİH VE OYUN ADI */
+        .sheet-title {
+            text-align: center;
+            font-size: 2.2em;
+            font-family: 'Georgia', serif;
+            color: #3e2723 !important;
+            font-weight: 900;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+            padding-bottom: 10px;
+            border-bottom: 3px double #795548;
+        }
+
+        .date-display {
+            text-align: center;
+            font-family: 'Georgia', serif;
+            font-style: italic;
+            font-size: 1.1em;
+            color: #5d4037 !important;
+            margin-bottom: 25px;
+            background: rgba(121, 85, 72, 0.1);
+            padding: 8px 20px;
+            border-radius: 20px;
+            display: inline-block;
+        }
+
+        /* 6. SÜTUN BAŞLIKLARI */
+        .col-header {
+            font-family: 'Georgia', serif;
             font-weight: bold;
             text-align: center;
-            border-bottom: 2px solid #2c1e12;
-            padding-bottom: 5px;
             font-size: 1.1em;
-            color: #8b0000;
+            color: #4e342e !important;
+            padding: 12px 5px;
+            border-bottom: 2px solid #795548;
+            background: linear-gradient(to bottom, rgba(121, 85, 72, 0.05), transparent);
+            margin-bottom: 10px;
+        }
+
+        /* 7. SATIR ETİKETLERİ */
+        .row-label {
+            font-family: 'Georgia', serif;
+            font-weight: 600;
+            font-size: 1.1em;
+            color: #3e2723 !important;
+            display: flex;
+            align-items: center;
+            height: 45px;
+            padding-left: 10px;
+            background: rgba(121, 85, 72, 0.05);
+            border-radius: 3px;
+            margin-right: 5px;
+            border-left: 3px solid #795548;
+        }
+
+        /* 8. AYIRICI ÇİZGİ */
+        .section-divider {
+            text-align: center;
+            font-family: 'Georgia', serif;
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #5d4037 !important;
+            margin: 20px 0;
+            padding: 10px;
+            position: relative;
+            background: rgba(121, 85, 72, 0.1);
+            border-radius: 3px;
+            border-top: 1px dashed #a1887f;
+            border-bottom: 1px dashed #a1887f;
+        }
+
+        /* 9. HATA MESAJLARI */
+        .error-badge {
+            font-family: 'Courier New', monospace;
+            color: #c62828 !important;
+            font-weight: bold;
+            font-size: 0.85em;
+            text-align: center;
+            padding: 5px;
+            margin-top: 5px;
+            background: rgba(198, 40, 40, 0.1);
+            border-radius: 3px;
+            border: 1px solid #c62828;
+        }
+
+        /* 10. BUTON STİLLERİ */
+        .stButton > button {
+            background: linear-gradient(to bottom, #795548, #5d4037);
+            color: white !important;
+            font-family: 'Georgia', serif;
+            font-weight: bold;
+            border: 2px solid #3e2723 !important;
+            border-radius: 5px;
+            padding: 10px 24px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+            transition: all 0.2s ease;
         }
         
+        .stButton > button:hover {
+            background: linear-gradient(to bottom, #8d6e63, #6d4c41);
+            box-shadow: 0 5px 10px rgba(0,0,0,0.3);
+            transform: translateY(-1px);
+        }
+
+        /* 11. İPTAL BUTONU */
+        .cancel-button > button {
+            background: linear-gradient(to bottom, #bcaaa4, #a1887f) !important;
+            border: 2px solid #8d6e63 !important;
+        }
+        
+        .cancel-button > button:hover {
+            background: linear-gradient(to bottom, #d7ccc8, #bcaaa4) !important;
+        }
+
+        /* 12. TABLO İÇİNDEKİ COLUMN'LAR İÇİN ÖZEL STİL */
+        div[data-testid="stVerticalBlock"] > div[style*="flex"]:has(> div[data-testid="column"]) 
+        div[data-testid="column"] {
+            padding: 5px 10px;
+        }
+
+        /* 13. ÇİFT SATIRLAR İÇİN FARKLI ARKA PLAN */
+        div[data-testid="stVerticalBlock"] > div[style*="flex"]:has(> div[data-testid="column"]):nth-child(even) 
         .row-label {
-            font-weight: bold;
-            padding-top: 8px;
-            font-size: 1em;
-            color: #2c1e12;
+            background: rgba(121, 85, 72, 0.03);
         }
-
-        /* Butonlar (Kağıt üzerinde uyumlu dursun) */
-        .paper-btn button {
-            background-color: #2c1e12 !important;
-            color: #fdfbf7 !important;
-            border: none !important;
-            font-family: 'Courier New', Courier, monospace !important;
-            font-weight: bold !important;
-            transition: all 0.3s ease;
-        }
-        .paper-btn button:hover {
-            background-color: #8b0000 !important;
-            transform: scale(1.02);
-        }
-
-        /* Hata Mesajı Stili */
-        .error-msg {
-            color: #d93025;
-            font-weight: bold;
-            font-size: 0.9em;
-            margin-top: 5px;
-        }
-
     </style>
     """, unsafe_allow_html=True)
 
@@ -127,198 +211,170 @@ def game_interface():
     if "current_match_name" not in st.session_state: st.session_state["current_match_name"] = "King_Maci"
     if "match_date" not in st.session_state: st.session_state["match_date"] = datetime.now().strftime("%d.%m.%Y")
     if "players" not in st.session_state: st.session_state["players"] = []
-    
-    # Skorları tutacağımız sözlük
     if "scores" not in st.session_state: st.session_state["scores"] = {}
 
-    # --- 1. KURULUM EKRANI (Normal Streamlit Görünümü) ---
+    # --- 1. KURULUM EKRANI ---
     if not st.session_state["sheet_active"]:
-        st.info("Yeni bir defter sayfası açmak için oyuncuları seçin.")
-        
+        st.markdown("### 📜 Yeni Maç Defteri")
         c1, c2 = st.columns(2)
-        with c1:
-            m_name = st.text_input("🏷️ Maç Adı:", "King_Akşamı")
-            users = list(name_to_id.keys())
-        with c2:
+        with c1: m_name = st.text_input("🏷️ Maç Adı:", "King_Akşamı")
+        with c2: 
             is_past = st.checkbox("📅 Geçmiş Maç")
             d_val = st.date_input("Tarih", datetime.now() - timedelta(days=1)) if is_past else datetime.now()
-            
-        selected = st.multiselect("Oyuncular (4 Kişi):", users, max_selections=4)
+        
+        selected = st.multiselect("Masadaki Oyuncular (4 Kişi):", list(name_to_id.keys()), max_selections=4)
         
         if len(selected) == 4:
-            if st.button("🖋️ Defteri Önüme Getir", type="primary", use_container_width=True):
+            if st.button("📝 Defteri Aç", type="primary", use_container_width=True):
                 st.session_state["current_match_name"] = m_name
                 st.session_state["match_date"] = d_val.strftime("%d.%m.%Y")
                 st.session_state["players"] = selected
                 st.session_state["sheet_active"] = True
                 st.session_state["scores"] = {} 
                 st.rerun()
+        elif len(selected) > 0:
+            st.warning(f"4 oyuncu seçmelisiniz. Şu anda {len(selected)} oyuncu seçtiniz.")
         return
 
-    # --- 2. DEFTER EKRANI (Parşömen Kutusu İçinde) ---
+    # --- 2. DEFTER EKRANI ---
     players = st.session_state["players"]
     
-    # KAĞIT BAŞLANGICI
-    st.markdown('<div class="paper-sheet">', unsafe_allow_html=True)
-    
-    # Başlık
+    # Başlık (tablo dışında)
     st.markdown(f"""
-    <div class="paper-header">
-        <h1 class="paper-title">{st.session_state['current_match_name']}</h1>
-        <p>📅 {st.session_state['match_date']}</p>
+    <div class="sheet-title">{st.session_state['current_match_name']}</div>
+    <div style="text-align:center;">
+        <span class="date-display">📅 {st.session_state['match_date']}</span>
     </div>
     """, unsafe_allow_html=True)
 
-    # Tablo Başlıkları
+    # Sütun Başlıkları (tablonun başlangıcı)
     cols = st.columns([1.5, 1, 1, 1, 1])
-    with cols[0]: st.markdown('<div class="player-header">OYUN TÜRÜ</div>', unsafe_allow_html=True)
-    with cols[1]: st.markdown(f'<div class="player-header">{players[0]}</div>', unsafe_allow_html=True)
-    with cols[2]: st.markdown(f'<div class="player-header">{players[1]}</div>', unsafe_allow_html=True)
-    with cols[3]: st.markdown(f'<div class="player-header">{players[2]}</div>', unsafe_allow_html=True)
-    with cols[4]: st.markdown(f'<div class="player-header">{players[3]}</div>', unsafe_allow_html=True)
+    with cols[0]: st.markdown('<div class="col-header" style="text-align:left;">OYUN</div>', unsafe_allow_html=True)
+    for i, p in enumerate(players):
+        with cols[i+1]: st.markdown(f'<div class="col-header">{p}</div>', unsafe_allow_html=True)
 
     # --- SATIRLARI OLUŞTURMA ---
     rows_structure = []
-
-    # 1. CEZALAR
+    # 1. Cezalar
     for oyun_adi, kural in OYUN_KURALLARI.items():
         if "Koz" in oyun_adi: continue
         limit = kural['limit']
         for i in range(1, limit + 1):
-            row_id = f"{oyun_adi}_{i}"
-            rows_structure.append({"id": row_id, "label": oyun_adi, "type": "ceza", "limit": kural['adet'], "puan": kural['puan']})
+            rows_structure.append({"id": f"{oyun_adi}_{i}", "label": oyun_adi, "limit": kural['adet'], "puan": kural['puan'], "type": "ceza"})
 
-    # 2. KOZLAR (8 Adet)
+    # Araya Ayırıcı
+    rows_structure.append({"type": "separator", "label": "KOZ OYUNLARI"})
+
+    # 2. Kozlar
     for i in range(1, 9):
-        row_id = f"KOZ_{i}"
-        rows_structure.append({"id": row_id, "label": "KOZ", "type": "koz", "limit": 13, "puan": 50})
+        rows_structure.append({"id": f"KOZ_{i}", "label": "KOZ", "limit": 13, "puan": 50, "type": "koz"})
 
-    # --- DÖNGÜ İLE INPUTLARI YERLEŞTİRME ---
+    # --- DÖNGÜ VE INPUTLAR ---
     errors = []
     valid_data_rows = []
-    
-    # Sayaçlar
     ceza_counters = {k: 0 for k in OYUN_KURALLARI}
     koz_counter = 0
     has_data = False
 
     for row_info in rows_structure:
+        # Ayırıcı Satır
+        if row_info.get("type") == "separator":
+            st.markdown(f'<div class="section-divider">{row_info["label"]}</div>', unsafe_allow_html=True)
+            continue
+
+        # Normal Satır - CSS burada devreye girecek
         c = st.columns([1.5, 1, 1, 1, 1])
         
-        # Oyun İsmi
+        # Sol Sütun (Oyun Adı)
         with c[0]:
             st.markdown(f'<div class="row-label">{row_info["label"]}</div>', unsafe_allow_html=True)
         
-        # Oyuncu Puanları
-        current_row_scores = []
+        # Oyuncu Sütunları
+        current_vals = []
         for idx, p in enumerate(players):
             key = f"{row_info['id']}_{p}"
-            if key not in st.session_state["scores"]:
+            if key not in st.session_state["scores"]: 
                 st.session_state["scores"][key] = 0
             
             with c[idx + 1]:
+                # Input değerinin görünmesi için özel stil
                 val = st.number_input(
-                    "hidden",
+                    label="", 
                     min_value=0, 
                     max_value=13, 
                     step=1, 
+                    value=st.session_state["scores"][key],
                     key=key, 
                     label_visibility="collapsed"
                 )
-                current_row_scores.append(val)
+                current_vals.append(val)
 
-        # --- ANLIK KONTROL (MÜFETTİŞ) ---
-        row_sum = sum(current_row_scores)
-        
+        # --- KONTROLLER ---
+        row_sum = sum(current_vals)
         if row_sum > 0: has_data = True
 
-        # Hata varsa o satırın altına hemen uyarı yaz
         if row_sum != 0 and row_sum != row_info["limit"]:
             st.markdown(f"""
-            <div class="error-msg" style="text-align:center; border-bottom:1px solid red; margin-bottom:10px;">
-                ⚠️ HATA: Toplam {row_info['limit']} olmalı (Şu an: {row_sum})
+            <div class="error-badge">
+                ⚠️ HATA: {row_sum} girildi (Olması gereken: {row_info['limit']})
             </div>
             """, unsafe_allow_html=True)
-            # Genel hata listesine de ekle
-            game_num = ceza_counters.get(row_info['label'], koz_counter) + 1 # Tahmini numara
-            errors.append(f"{row_info['label']}: {row_sum} girildi, {row_info['limit']} olmalı.")
+            errors.append(f"{row_info['label']}: Hatalı toplam")
         
-        # Veri hazırlama (Sadece geçerli ve dolu satırlar için)
+        # Veri Hazırlama
         if row_sum == row_info["limit"]:
-            db_name = ""
             if row_info["type"] == "koz":
-                koz_counter += 1 # Buradaki sayaç sadece geçerli olanları sayar, düzeltilmesi gerekebilir
-                # Doğru isimlendirme için döngü başındaki sırayı kullanmalıyız aslında
-                # Ama basitlik adına:
-                pass
+                koz_counter += 1
+                db_name = f"Koz (Tümü) {koz_counter}"
+            else:
+                ceza_counters[row_info["label"]] += 1
+                db_name = f"{row_info['label']} {ceza_counters[row_info['label']]}"
             
-    st.markdown('</div>', unsafe_allow_html=True) # KAĞIT BİTİŞİ
-    
-    # --- KAYIT İŞLEMİ (KAĞIDIN DIŞINDAKİ ALAN) ---
+            p_vals = [v * row_info["puan"] for v in current_vals]
+            valid_data_rows.append([db_name] + p_vals)
+
+    # --- BUTONLAR ---
+    st.write("")
     st.write("")
     
-    # Verileri tekrar temiz bir şekilde toplayalım (Kaydet tuşuna basınca)
     c_save, c_cancel = st.columns([2, 1])
     
     with c_save:
-        st.markdown('<div class="paper-btn">', unsafe_allow_html=True)
-        if st.button("💾 DEFTERİ KAPAT VE KAYDET", use_container_width=True):
-            # Yeniden Kontrol
-            final_errors = []
-            final_rows = []
-            
-            # Sayaçları sıfırla
-            c_counts = {k: 0 for k in OYUN_KURALLARI}
-            k_count = 0
-            
-            for r_info in rows_structure:
-                scores = [st.session_state["scores"][f"{r_info['id']}_{p}"] for p in players]
-                r_sum = sum(scores)
-                
-                if r_sum == 0: continue # Boş satır
-                
-                if r_sum != r_info["limit"]:
-                    final_errors.append(f"{r_info['label']}: Toplam {r_info['limit']} olmalı.")
-                else:
-                    # İsimlendirme
-                    if r_info["type"] == "koz":
-                        k_count += 1
-                        db_name = f"Koz (Tümü) {k_count}"
-                    else:
-                        c_counts[r_info["label"]] += 1
-                        db_name = f"{r_info['label']} {c_counts[r_info['label']]}"
-                    
-                    # Puanlama
-                    conv_scores = [s * r_info["puan"] for s in scores]
-                    final_rows.append([db_name] + conv_scores)
-            
-            if final_errors:
-                st.error("⚠️ Aşağıdaki satırlarda hata var, kaydedilemedi:")
-                for e in final_errors: st.write(f"- {e}")
-            elif not final_rows:
-                st.warning("Defter boş, kaydedilecek bir şey yok.")
+        save_disabled = len(errors) > 0 or not has_data
+        if st.button("💾 DEFTERİ KAYDET", type="primary", use_container_width=True, disabled=save_disabled):
+            if errors:
+                st.error("⚠️ Hatalı satırları düzeltin!")
+            elif not has_data:
+                st.warning("Defter boş!")
             else:
-                # Kayıt
+                # Toplamlar
                 final_total = ["TOPLAM"]
                 for i in range(4):
-                    col_total = sum([r[i+1] for r in final_rows])
-                    final_total.append(col_total)
+                    col_tot = sum([r[i+1] for r in valid_data_rows])
+                    final_total.append(col_tot)
                 
                 header = ["OYUN TÜRÜ"]
                 for p in players:
                     uid = name_to_id.get(p, "?")
                     header.append(f"{p} (uid:{uid})")
 
-                if save_match_to_sheet(header, final_rows, final_total):
+                if save_match_to_sheet(header, valid_data_rows, final_total):
                     st.balloons()
-                    st.success("Kayıt Başarılı!")
+                    st.success("✅ Maç başarıyla kaydedildi!")
                     st.session_state["sheet_active"] = False
-                    st.session_state["scores"] = {}
+                    st.session_state["scores"] = {} 
                     st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with c_cancel:
-        if st.button("İptal", use_container_width=True):
+        if st.button("❌ İptal", use_container_width=True):
             st.session_state["sheet_active"] = False
-            st.session_state["scores"] = {}
+            st.session_state["scores"] = {} 
             st.rerun()
+    
+    # Hata veya uyarı mesajları
+    if errors:
+        st.error(f"**{len(errors)} hata** bulundu. Lütfen kırmızı ile işaretli satırları düzeltin.")
+    elif has_data:
+        st.success("✓ Tüm satırlar doğru!")
+    else:
+        st.info("📝 Defteri doldurmaya başlayın. Her satırın toplamı belirtilen limit değerine eşit olmalıdır.")
