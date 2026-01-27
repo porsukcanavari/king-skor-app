@@ -11,7 +11,6 @@ from utils.config import SHEET_URL, STARTING_ELO
 def get_google_sheet_client():
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        # secrets.toml dosyasından okuyacak
         creds_dict = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
@@ -30,13 +29,23 @@ def get_sheet_by_url():
             return None
     return None
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_all_data():
     try:
         wb = get_sheet_by_url()
         if not wb: return [], []
-        users_data = wb.worksheet("Users").get_all_records()
-        matches_data = wb.worksheet("Maclar").get_all_values()
+        
+        # Hata önleyici: Eğer sayfa boşsa veya yoksa
+        try:
+            users_data = wb.worksheet("Users").get_all_records()
+        except:
+            users_data = []
+            
+        try:
+            matches_data = wb.worksheet("Maclar").get_all_values()
+        except:
+            matches_data = []
+            
         return users_data, matches_data
     except Exception as e:
         st.error(f"Veri çekme hatası: {str(e)}")
@@ -56,18 +65,27 @@ def get_users_map():
 
     for row in users_data:
         try:
+            # Güvenli veri okuma
             u_id = int(row.get('UserID', 0))
             u_name = str(row.get('Username', '')).strip()
             u_role = str(row.get('Role', 'user')).strip()
-            u_kkd = int(row.get('KKD', STARTING_ELO))
+            
+            # KKD bazen boş gelebilir, kontrol et
+            raw_kkd = row.get('KKD', STARTING_ELO)
+            u_kkd = int(raw_kkd) if str(raw_kkd).isdigit() else STARTING_ELO
             
             if u_name:
                 id_to_name[u_id] = u_name
                 name_to_id[u_name] = u_id
-                full_data.append({'UserID': u_id, 'Username': u_name, 'Password': row.get('Password', ''), 'Role': u_role, 'KKD': u_kkd})
+                full_data.append({
+                    'UserID': u_id, 'Username': u_name, 
+                    'Password': row.get('Password', ''), 'Role': u_role, 
+                    'KKD': u_kkd
+                })
         except: continue
     
-    return id_to_name, name_to_id, pd.DataFrame(full_data)
+    full_df = pd.DataFrame(full_data) if full_data else pd.DataFrame()
+    return id_to_name, name_to_id, full_df
 
 def update_user_in_sheet(old_username, new_username, password, role, delete=False):
     try:
@@ -76,20 +94,25 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
         sheet = wb.worksheet("Users")
         all_data = sheet.get_all_values()
         
-        if not all_data: return False
+        if not all_data: 
+            # Başlık satırı yoksa oluştur
+            sheet.append_row(["Username", "Password", "Role", "UserID", "KKD"])
+            all_data = sheet.get_all_values()
+
         headers = all_data[0]
-        
         try:
             user_idx = headers.index("Username")
             pass_idx = headers.index("Password")
             role_idx = headers.index("Role")
             uid_idx = headers.index("UserID")
-        except: return False
+            kkd_idx = headers.index("KKD")
+        except ValueError:
+            return False
         
         found_idx = -1
         for i, row in enumerate(all_data):
             if i == 0: continue
-            if str(row[user_idx]).strip() == old_username.strip():
+            if len(row) > user_idx and str(row[user_idx]).strip() == old_username.strip():
                 found_idx = i
                 break
         
@@ -99,6 +122,7 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
                 clear_cache()
                 return "deleted"
             else:
+                # Güncelleme
                 sheet.update_cell(found_idx + 1, user_idx + 1, new_username)
                 sheet.update_cell(found_idx + 1, pass_idx + 1, password)
                 sheet.update_cell(found_idx + 1, role_idx + 1, role)
@@ -106,7 +130,12 @@ def update_user_in_sheet(old_username, new_username, password, role, delete=Fals
                 return "updated"
         else:
             if not delete:
-                c_ids = [int(row[uid_idx]) for row in all_data[1:] if row[uid_idx].isdigit()]
+                # Yeni ID bulma
+                c_ids = []
+                for row in all_data[1:]:
+                    if len(row) > uid_idx and str(row[uid_idx]).isdigit():
+                        c_ids.append(int(row[uid_idx]))
+                
                 new_id = max(c_ids) + 1 if c_ids else 1
                 sheet.append_row([new_username, password, role, new_id, STARTING_ELO])
                 clear_cache()
@@ -127,6 +156,7 @@ def delete_match_from_sheet(match_title):
         for i, row in enumerate(all_values):
             if row and str(row[0]).strip() == match_title.strip():
                 start = i
+                # Sonraki maçı veya dosya sonunu bul
                 for j in range(i + 1, len(all_values)):
                     if all_values[j] and str(all_values[j][0]).startswith("--- MAÇ:"):
                         end = j
@@ -135,6 +165,7 @@ def delete_match_from_sheet(match_title):
                 break
         
         if start != -1 and end != -1:
+            # Delete rows 1-based index kullanır
             sheet.delete_rows(start + 1, end)
             clear_cache()
             return True
@@ -144,45 +175,64 @@ def delete_match_from_sheet(match_title):
         return False
 
 def save_match_to_sheet(header_row, data_rows, total_row):
-    # Döngüsel importu önlemek için fonksiyon içinde import ediyoruz
+    # KRİTİK NOKTA: stats importunu BURADA yapıyoruz.
+    # Böylece dosya başında stats'ı çağırıp döngüye girmiyor.
     from utils.stats import istatistikleri_hesapla
+    
     try:
         wb = get_sheet_by_url()
         if not wb: return False
         sheet_maclar = wb.worksheet("Maclar")
         
         match_title = f"--- MAÇ: {st.session_state.get('current_match_name', 'Maç')} ({st.session_state.get('match_date', datetime.now().strftime('%d.%m.%Y'))}) ---"
-        append_data = [[match_title, "", "", "", ""], header_row]
+        
+        append_data = [
+            [match_title, "", "", "", ""],
+            header_row
+        ]
         for dr in data_rows: append_data.append(dr)
         append_data.append(total_row)
-        append_data.append(["", "", "", "", ""])
+        append_data.append(["", "", "", "", ""]) # Boşluk
         
         sheet_maclar.append_rows(append_data)
+        
+        # Cache'i temizle ve Google'ın işlemesini bekle
         clear_cache()
         time.sleep(2)
         
-        # ELO Güncelleme
+        # --- ELO GÜNCELLEME ---
+        # Veriyi yeniden çekip hesaplatıyoruz
         stats, _, _, _ = istatistikleri_hesapla()
-        elo_dict = {uid: data['kkd'] for uid, data in stats.items()}
         
-        sheet_users = wb.worksheet("Users")
-        all_data = sheet_users.get_all_values()
-        if len(all_data) > 0:
-            headers = all_data[0]
-            try:
-                uid_idx = headers.index("UserID")
-                kkd_idx = headers.index("KKD")
-                updated_data = [headers]
-                for row in all_data[1:]:
-                    if len(row) <= kkd_idx: row.extend([""] * (kkd_idx - len(row) + 1))
-                    try:
-                        curr_id = int(row[uid_idx])
-                        if curr_id in elo_dict: row[kkd_idx] = int(elo_dict[curr_id])
-                    except: pass
-                    updated_data.append(row)
-                sheet_users.clear()
-                sheet_users.update(updated_data)
-            except: pass
+        if stats:
+            elo_dict = {uid: data['kkd'] for uid, data in stats.items()}
+            
+            sheet_users = wb.worksheet("Users")
+            all_data = sheet_users.get_all_values()
+            
+            if len(all_data) > 0:
+                headers = all_data[0]
+                try:
+                    uid_idx = headers.index("UserID")
+                    kkd_idx = headers.index("KKD")
+                    
+                    updated_data = [headers]
+                    for row in all_data[1:]:
+                        # Satır kısa ise doldur
+                        if len(row) <= kkd_idx: 
+                            row.extend([""] * (kkd_idx - len(row) + 1))
+                        
+                        try:
+                            curr_id = int(row[uid_idx])
+                            if curr_id in elo_dict:
+                                row[kkd_idx] = int(elo_dict[curr_id])
+                        except: pass
+                        updated_data.append(row)
+                    
+                    sheet_users.clear()
+                    sheet_users.update(updated_data)
+                except Exception as e:
+                    print(f"ELO update hatası: {e}")
             
         return True
     except Exception as e:
