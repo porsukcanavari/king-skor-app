@@ -658,6 +658,8 @@ def extract_id_from_cell(cell_value, name_to_id_map):
     return None
 
 def istatistikleri_hesapla():
+    try:
+        import pandas as pd  # Fonksiyon içinde tekrar import
     id_to_name, name_to_id, _ = get_users_map()
     _, raw_data = fetch_all_data()
     
@@ -2727,3 +2729,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
