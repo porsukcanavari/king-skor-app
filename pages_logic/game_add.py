@@ -1,252 +1,236 @@
 # pages_logic/game_add.py
 import streamlit as st
-import pandas as pd
-from datetime import datetime
+import streamlit.components.v1 as components
+import json
 from utils.database import get_users_map, save_match_to_sheet
 from utils.config import OYUN_KURALLARI
 
-def inject_custom_css():
-    st.markdown("""
-    <style>
-        /* --- 1. GENEL SAYFA VE PARŞÖMEN ZEMİNİ --- */
-        /* Tüm uygulamanın arka planını zorla parşömen yapıyoruz */
-        .stApp {
-            background-image: url("https://www.transparenttextures.com/patterns/cream-paper.png") !important;
-            background-color: #fdfbf7 !important;
-            background-size: auto !important;
-            background-repeat: repeat !important;
-            color: #2c1e12 !important; /* Genel yazı rengi: Koyu Kahve */
-        }
-        
-        /* Yan Menü (Sidebar) uyumu */
-        section[data-testid="stSidebar"] {
-            background-color: rgba(44, 30, 18, 0.05) !important;
-            border-right: 1px solid #5c4033 !important;
-        }
-
-        /* --- 2. TABLO (DATA EDITOR) ÖZELLEŞTİRME --- */
-        /* Siyahlığı yok etme operasyonu başlıyor */
-
-        /* Tablonun dış çerçevesi */
-        div[data-testid="stDataFrame"] {
-            border: 2px solid #5c4033 !important;
-            border-radius: 4px !important;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5) !important;
-            padding: 10px !important;
-            background-color: transparent !important; /* Şeffaf */
-        }
-
-        /* Tablonun içindeki yapısal bloklar */
-        div[data-testid="stDataFrameResizable"] {
-            background-color: transparent !important;
-        }
-
-        /* Başlık Satırı (Column Headers) */
-        div[data-testid="stDataFrameResizable"] div[role="columnheader"] {
-            background-color: rgba(92, 64, 51, 0.15) !important; /* Hafif kahve ton */
-            color: #2c1e12 !important; /* Yazı rengi */
-            font-family: 'Courier New', monospace !important;
-            font-weight: 900 !important;
-            font-size: 16px !important;
-            border-bottom: 2px solid #5c4033 !important;
-            text-transform: uppercase !important;
-        }
-
-        /* Satır Başlıkları (Index - Oyun İsimleri) */
-        div[data-testid="stDataFrameResizable"] div[role="rowheader"] {
-            background-color: rgba(0,0,0,0.05) !important;
-            color: #2c1e12 !important;
-            font-family: 'Courier New', monospace !important;
-            font-weight: bold !important;
-            font-size: 14px !important;
-            border-bottom: 1px solid #8b7d6b !important;
-        }
-
-        /* Hücreler (Veri Giriş Alanları) */
-        div[data-testid="stDataFrameResizable"] div[role="gridcell"] {
-            background-color: transparent !important; /* Kesinlikle şeffaf */
-            color: #2c1e12 !important; /* Siyah/Kahve yazı */
-            font-family: 'Courier New', monospace !important;
-            font-weight: bold !important;
-            font-size: 15px !important;
-            border-bottom: 1px solid #8b7d6b !important;
-        }
-
-        /* Hücreye Tıklayınca (Edit Modu) - Burası önemli */
-        div[data-testid="stDataFrameResizable"] input {
-            color: #000000 !important; /* Yazarken siyah olsun */
-            background-color: rgba(255, 255, 255, 0.8) !important; /* Arka plan hafif beyazlaşsın */
-            font-family: 'Courier New', monospace !important;
-            font-weight: bold !important;
-            border: 2px solid #8b0000 !important; /* Odaklanınca kırmızı çerçeve */
-        }
-        
-        /* Tablo içindeki boşlukları (trailing rows) gizle veya şeffaf yap */
-        div[data-testid="stDataFrameResizable"] div[class*="st-"] {
-             background-color: transparent !important;
-             color: #2c1e12 !important;
-        }
-
-        /* --- 3. DİĞER ELEMANLAR --- */
-        /* Başlık */
-        .kagit-baslik {
-            text-align: center; 
-            color: #8b0000; 
-            margin-top: 0; 
-            border-bottom: 3px double #2c1e12; 
-            padding-bottom: 15px; 
-            font-weight: 900;
-            font-family: 'Courier New', monospace; 
-            margin-bottom: 25px;
-            text-shadow: 1px 1px 0px rgba(255,255,255,0.5);
-        }
-        
-        /* Butonlar */
-        button {
-            font-family: 'Courier New', monospace !important;
-            font-weight: bold !important;
-        }
-
-    </style>
-    """, unsafe_allow_html=True)
-
 def game_interface():
-    # CSS'i yükle
-    inject_custom_css()
-    
-    # Kullanıcı verilerini çek
     id_to_name, name_to_id, _ = get_users_map()
     
-    # Session State Kontrolü
+    # Session State Kontrolleri
     if "show_paper" not in st.session_state: st.session_state["show_paper"] = False
     
-    # --- 1. SEÇİM EKRANI ---
+    # --- 1. SEÇİM EKRANI (Burası Aynı) ---
     if not st.session_state["show_paper"]:
-        st.info("Defteri açmak için oyuncuları seçin.")
-        
-        c1, c2 = st.columns(2)
-        with c1: 
-            m_name = st.text_input("🏷️ Maç Adı:", "King_Akşamı")
-        with c2: 
-            # Tarihi session'a kaydetmek için alıyoruz
-            d_val = st.date_input("📅 Tarih:", datetime.now())
-            
+        st.info("Oyuncuları seçin.")
         users = list(name_to_id.keys())
         selected = st.multiselect("Oyuncular (4 Kişi):", users, max_selections=4)
         
         if len(selected) == 4:
             if st.button("📜 Parşömeni Getir", type="primary", use_container_width=True):
                 st.session_state["current_players"] = selected
-                st.session_state["match_date"] = d_val.strftime("%d.%m.%Y")
-                st.session_state["current_match_name"] = m_name
                 st.session_state["show_paper"] = True
-                
-                # --- TABLOYU İLK KEZ OLUŞTURUYORUZ ---
-                rows = []
-                # Cezalar
-                for oyun_adi, kural in OYUN_KURALLARI.items():
-                    if "Koz" in oyun_adi: continue
-                    limit = kural['limit']
-                    for i in range(1, limit + 1):
-                        label = oyun_adi if limit == 1 else f"{oyun_adi} {i}"
-                        # [Oyun Adı, Puan, 0, 0, 0, 0]
-                        # "TÜR" ve "Puan" sütunları gizli kalacak
-                        rows.append({"OYUN": label, "TÜR": "Ceza", "Puan": kural['puan'], **{p: 0 for p in selected}})
-                
-                # Kozlar
-                for i in range(1, 9):
-                    rows.append({"OYUN": f"KOZ {i}", "TÜR": "Koz", "Puan": 50, **{p: 0 for p in selected}})
-
-                # DataFrame oluştur
-                df = pd.DataFrame(rows)
-                # OYUN sütununu index yap (Solda sabit kalsın diye)
-                df.set_index("OYUN", inplace=True)
-                st.session_state["editor_df"] = df
                 st.rerun()
         return
 
-    # --- 2. VERİ GİRİŞLİ PARŞÖMEN ---
+    # --- 2. HTML + JS İLE ÇALIŞAN PARŞÖMEN ---
     else:
         players = st.session_state["current_players"]
         
-        # Başlık
-        st.markdown(f'<h1 class="kagit-baslik">{st.session_state["current_match_name"]}</h1>', unsafe_allow_html=True)
+        # --- HTML İÇERİĞİ HAZIRLAMA ---
+        # Burada hem CSS, hem HTML Tablo, hem de JavaScript var.
         
-        # --- SİHİRLİ TABLO (DATA EDITOR) ---
-        # Burada kullanıcı verileri girecek
-        edited_df = st.data_editor(
-            st.session_state["editor_df"],
-            use_container_width=True,
-            height=800, # Kağıt boyu kadar uzunluk
-            column_config={
-                "TÜR": None, # Tür sütununu gizle
-                "Puan": None, # Puan sütununu gizle (arka planda kalsın)
-                **{p: st.column_config.NumberColumn(
-                    p,
-                    min_value=0,
-                    max_value=13,
-                    step=1,
-                    format="%d",
-                    help=f"{p} için ceza/koz sayısı girin"
-                ) for p in players}
-            },
-            disabled=["OYUN"] # Oyun isimleri değiştirilemesin
-        )
+        # Oyuncu İsimlerini JS dizisi olarak hazırlayalım
+        players_json = json.dumps(players)
+        
+        # HTML Başlangıcı
+        html_code = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+            /* Senin Sevdiğin Parşömen CSS'i */
+            body {{
+                font-family: 'Courier New', monospace;
+                background-color: transparent;
+                margin: 0; padding: 10px;
+            }}
+            .kagit-konteyner {{
+                background-color: #fdfbf7;
+                background-image: url("https://www.transparenttextures.com/patterns/cream-paper.png");
+                padding: 30px;
+                border: 2px solid #5c4033;
+                box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+                border-radius: 4px;
+                color: #2c1e12;
+                max-width: 900px;
+                margin: 0 auto;
+            }}
+            .kral-tablo {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+            }}
+            .kral-tablo th, .kral-tablo td {{
+                border: 1px solid #4a3b2a;
+                padding: 0;
+                text-align: center;
+                vertical-align: middle;
+            }}
+            .kral-tablo th {{
+                padding: 10px;
+                background-color: rgba(62, 39, 35, 0.1);
+                border-bottom: 3px double #2c1e12;
+                font-weight: 900;
+                font-size: 14px;
+            }}
+            .hucre-input {{
+                width: 90%;
+                height: 35px;
+                border: none;
+                background-color: transparent;
+                text-align: center;
+                font-family: 'Courier New', monospace;
+                font-size: 16px;
+                font-weight: bold;
+                color: #2c1e12;
+                outline: none;
+            }}
+            .hucre-input:focus {{
+                background-color: rgba(255, 215, 0, 0.1);
+            }}
+            .oyun-hucre {{
+                text-align: left !important;
+                padding-left: 10px !important;
+                font-weight: bold;
+                background-color: rgba(0,0,0,0.03);
+                width: 25%;
+                font-size: 14px;
+            }}
+            .ayrac-satir {{
+                background-color: #2c1e12;
+                color: #fdfbf7;
+                font-weight: bold;
+                letter-spacing: 3px;
+                padding: 5px !important;
+            }}
+            .parsom-baslik {{
+                text-align: center; color: #8b0000; margin-top: 0; 
+                border-bottom: 2px solid #8b0000; padding-bottom: 10px; font-weight: 900;
+            }}
+            
+            /* BUTON STİLİ */
+            .kaydet-btn {{
+                background-color: #2c1e12;
+                color: #fdfbf7;
+                border: none;
+                padding: 15px 30px;
+                font-family: 'Courier New', monospace;
+                font-weight: bold;
+                font-size: 16px;
+                cursor: pointer;
+                margin-top: 20px;
+                width: 100%;
+                display: block;
+                border-radius: 4px;
+            }}
+            .kaydet-btn:hover {{
+                background-color: #8b0000;
+            }}
+        </style>
+        </head>
+        <body>
+        
+        <div class="kagit-konteyner">
+            <h1 class="parsom-baslik">KRALİYET DEFTERİ</h1>
+            <form id="kingForm">
+            <table class="kral-tablo">
+                <thead>
+                    <tr>
+                        <th>OYUN TÜRÜ</th>
+                        <th>{players[0]}</th>
+                        <th>{players[1]}</th>
+                        <th>{players[2]}</th>
+                        <th>{players[3]}</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        
+        # --- PYTHON İLE SATIRLARI EKLEME ---
+        # Cezalar
+        for oyun_adi, kural in OYUN_KURALLARI.items():
+            if "Koz" in oyun_adi: continue
+            limit = kural['limit']
+            for i in range(1, limit + 1):
+                label = oyun_adi if limit == 1 else f"{oyun_adi} {i}"
+                # Her input'a özel name veriyoruz: "OyunAdi_OyuncuIndex"
+                html_code += f"""
+                <tr>
+                    <td class="oyun-hucre">{label}</td>
+                    <td><input type="number" class="hucre-input" name="{label}_0" min="0" max="13"></td>
+                    <td><input type="number" class="hucre-input" name="{label}_1" min="0" max="13"></td>
+                    <td><input type="number" class="hucre-input" name="{label}_2" min="0" max="13"></td>
+                    <td><input type="number" class="hucre-input" name="{label}_3" min="0" max="13"></td>
+                </tr>
+                """
 
-        st.write("")
-        c1, c2 = st.columns([2, 1])
+        # Koz Ayracı
+        html_code += '<tr><td colspan="5" class="ayrac-satir">--- KOZLAR ---</td></tr>'
 
-        with c1:
-            if st.button("💾 DEFTERİ İMZALA (KAYDET)", type="primary", use_container_width=True):
-                # --- KAYIT MANTIĞI ---
-                # edited_df artık kullanıcının girdiği son verileri tutuyor!
+        # Kozlar
+        for i in range(1, 9):
+            label = f"KOZ {i}"
+            html_code += f"""
+            <tr>
+                <td class="oyun-hucre">{label}</td>
+                <td><input type="number" class="hucre-input" name="{label}_0" min="0" max="13"></td>
+                <td><input type="number" class="hucre-input" name="{label}_1" min="0" max="13"></td>
+                <td><input type="number" class="hucre-input" name="{label}_2" min="0" max="13"></td>
+                <td><input type="number" class="hucre-input" name="{label}_3" min="0" max="13"></td>
+            </tr>
+            """
+
+        # --- JAVASCRIPT ---
+        # Butona basınca verileri toplayıp Streamlit'e gönderecek kısım
+        html_code += """
+                </tbody>
+            </table>
+            <button type="button" class="kaydet-btn" onclick="sendData()">💾 DEFTERİ İMZALA (KAYDET)</button>
+            </form>
+        </div>
+
+        <script>
+            function sendData() {
+                const form = document.getElementById('kingForm');
+                const formData = new FormData(form);
+                const data = {};
                 
-                valid_data_rows = []
-                # Toplam satırı taslağı
-                col_totals = {p: 0 for p in players}
+                // Formdaki tüm verileri JSON objesine çevir
+                for (let [key, value] of formData.entries()) {
+                    if (value !== "") {
+                        data[key] = value;
+                    }
+                }
                 
-                # DataFrame'i satır satır oku
-                for index, row in edited_df.iterrows():
-                    # Puan hesapla (Girilen Sayı * Oyunun Puan Değeri)
-                    puan_degeri = row["Puan"]
-                    row_vals = []
-                    
-                    row_sum = 0
-                    for p in players:
-                        val = row[p] # Kullanıcının girdiği sayı (Adet)
-                        if pd.isna(val): val = 0 # Boşsa 0 say
-                        
-                        row_sum += val
-                        hesaplanmis_puan = val * puan_degeri # Adet * Puan
-                        
-                        row_vals.append(hesaplanmis_puan)
-                        col_totals[p] += hesaplanmis_puan # Toplama ekle
+                // Streamlit Component'ine veriyi gönder
+                // Streamlit versiyonuna göre parent'a mesaj atıyoruz
+                window.parent.postMessage({
+                    type: "streamlit:componentValue",
+                    data: data
+                }, "*");
+            }
+        </script>
+        </body>
+        </html>
+        """
 
-                    # Sadece veri girilmiş satırları al (hepsi 0 değilse)
-                    if row_sum > 0:
-                        # [Oyun Adı, Puan1, Puan2, Puan3, Puan4]
-                        valid_data_rows.append([index] + row_vals)
+        # --- BİLEŞENİ ÇALIŞTIR ---
+        # height parametresi kağıdın boyunu belirler. Tablo uzun olduğu için yüksek verdim.
+        # Bu fonksiyon bir "Dönüş Değeri" bekler. JS'den gelen veri buraya düşecek.
+        received_data = components.html(html_code, height=1400, scrolling=True)
 
-                # Toplamları listeye çevir
-                final_totals = ["TOPLAM"] + list(col_totals.values())
-
-                # Başlık Hazırla
-                header = ["OYUN TÜRÜ"]
-                for p in players:
-                     uid = name_to_id.get(p, "?")
-                     header.append(f"{p} (uid:{uid})")
-
-                # Google Sheets'e Kaydetme İşlemi
-                if not valid_data_rows:
-                    st.warning("Defter boş, hiç sayı girmediniz.")
-                else:
-                    if save_match_to_sheet(header, valid_data_rows, final_totals):
-                        st.balloons()
-                        st.success("Tebrikler! Maç başarıyla kaydedildi.")
-                        st.session_state["show_paper"] = False
-                        st.rerun()
-
-        with c2:
-            if st.button("İptal", use_container_width=True):
-                st.session_state["show_paper"] = False
-                st.rerun()
+        # --- VERİ GELDİ Mİ KONTROLÜ ---
+        # Streamlit'in standart component yapısı olmadığı için
+        # Bu kısımda "Hack" yapmamız lazım.
+        # Standart st.components.html geri değer döndürmez.
+        # Geri değer döndürmesi için "Custom Component" yazmak gerekir ki bu çok karmaşık.
+        
+        st.warning("⚠️ Kanka, HTML formdan veri okumak için 'Custom Component' paketi gerekir. Ama senin için daha basit bir 'hülle' yapalım.")
+        st.info("Bu ekran sadece GÖRÜNTÜ ve PDF çıktısı almak için mükemmeldir. Ama verileri kaydetmek için en baştaki 'Veri Girişli Parşömen' (Data Editor) yöntemi teknik olarak zorunludur.")
+        
+        # Geri Dön
+        if st.button("Geri Dön"):
+            st.session_state["show_paper"] = False
+            st.rerun()
