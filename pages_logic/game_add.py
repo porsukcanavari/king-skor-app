@@ -9,7 +9,7 @@ def game_interface():
     
     if "show_paper" not in st.session_state: st.session_state["show_paper"] = False
     
-    # --- 1. SEÇİM EKRANI ---
+    # --- 1. OYUNCU SEÇİMİ ---
     if not st.session_state["show_paper"]:
         st.info("Oyuncuları seçin.")
         c1, c2 = st.columns(2)
@@ -26,110 +26,132 @@ def game_interface():
                 st.rerun()
         return
 
-    # --- 2. GÖRSEL PARŞÖMEN VE TABLO ---
+    # --- 2. PARŞÖMEN VE TABLO ---
     else:
         players = st.session_state["current_players"]
         
-        # --- HTML İÇERİĞİNİ HAZIRLAMA ---
-        # 1. Tablo Başlıkları
-        table_rows = "<tr>"
-        table_rows += '<th class="baslik-hucre sol-baslik">OYUN TÜRÜ</th>'
-        for p in players:
-            table_rows += f'<th class="baslik-hucre">{p}</th>'
-        table_rows += "</tr>"
+        # --- HTML İÇERİĞİ HAZIRLAMA (DÜZ METİN OLARAK) ---
+        
+        # 1. CSS STİLLERİ
+        style_block = """
+        <style>
+            .parsom-kutu {
+                background-color: #fdfbf7;
+                background-image: url("https://www.transparenttextures.com/patterns/cream-paper.png");
+                width: 100%;
+                max-width: 850px;
+                margin: 0 auto;
+                border: 2px solid #8b7d6b;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+                border-radius: 4px;
+                padding: 40px;
+                font-family: 'Courier New', Courier, monospace;
+                color: #2c1e12;
+            }
+            .kral-tablo {
+                width: 100%;
+                border-collapse: collapse; /* Çizgileri yapıştır */
+                margin-top: 20px;
+            }
+            .kral-tablo th {
+                border: 2px solid #5c4033;
+                padding: 10px;
+                text-align: center;
+                background-color: rgba(92, 64, 51, 0.1);
+                font-weight: 900;
+                font-size: 1.1em;
+                text-transform: uppercase;
+            }
+            .kral-tablo td {
+                border: 1px solid #8b7d6b;
+                padding: 8px;
+                height: 35px;
+                font-weight: bold;
+                color: #2c1e12;
+            }
+            .oyun-adi {
+                text-align: left;
+                padding-left: 15px !important;
+                background-color: rgba(0,0,0,0.03);
+                width: 25%;
+            }
+            .bos-hucre {
+                background-color: transparent;
+            }
+            .ayrac-satir td {
+                background-color: #2c1e12;
+                color: #fdfbf7 !important;
+                text-align: center;
+                font-weight: bold;
+                letter-spacing: 3px;
+                border: 1px solid #2c1e12;
+            }
+            .baslik {
+                text-align: center;
+                font-size: 2.5em;
+                font-weight: 900;
+                color: #8b0000;
+                margin: 0;
+                text-transform: uppercase;
+                border-bottom: 3px double #2c1e12;
+                padding-bottom: 15px;
+            }
+        </style>
+        """
 
-        # 2. Cezalar
+        # 2. TABLO HTML'İ OLUŞTURMA
+        # Başlıklar
+        table_html = '<table class="kral-tablo">'
+        table_html += '<thead><tr><th>OYUN TÜRÜ</th>'
+        for p in players:
+            table_html += f'<th>{p}</th>'
+        table_html += '</tr></thead><tbody>'
+
+        # Cezalar Satırları
         for oyun_adi, kural in OYUN_KURALLARI.items():
             if "Koz" in oyun_adi: continue
             limit = kural['limit']
             for i in range(1, limit + 1):
                 label = f"{oyun_adi}" if limit == 1 else f"{oyun_adi} {i}"
-                table_rows += f"""
+                table_html += f"""
                 <tr>
                     <td class="oyun-adi">{label}</td>
-                    <td></td><td></td><td></td><td></td>
+                    <td class="bos-hucre"></td>
+                    <td class="bos-hucre"></td>
+                    <td class="bos-hucre"></td>
+                    <td class="bos-hucre"></td>
                 </tr>
                 """
 
-        # 3. Koz Ayracı
-        table_rows += '<tr><td colspan="5" class="koz-ayrac">--- KOZLAR ---</td></tr>'
+        # Koz Ayracı
+        table_html += '<tr class="ayrac-satir"><td colspan="5">--- KOZLAR ---</td></tr>'
 
-        # 4. Kozlar
+        # Kozlar Satırları
         for i in range(1, 9):
-            table_rows += f"""
+            table_html += f"""
             <tr>
                 <td class="oyun-adi">KOZ {i}</td>
-                <td></td><td></td><td></td><td></td>
+                <td class="bos-hucre"></td>
+                <td class="bos-hucre"></td>
+                <td class="bos-hucre"></td>
+                <td class="bos-hucre"></td>
             </tr>
             """
+        
+        table_html += '</tbody></table>'
 
-        # --- CSS STİLLERİ ---
-        css_style = """
-        <style>
-            .parsom-kagidi {
-                background-color: #fdfbf7;
-                background-image: url("https://www.transparenttextures.com/patterns/cream-paper.png");
-                width: 100%;
-                max-width: 800px;
-                margin: 0 auto;
-                border: 1px solid #d3c6a0;
-                box-shadow: 0 10px 40px rgba(0,0,0,0.8);
-                border-radius: 3px;
-                padding: 40px;
-                color: #2c1e12;
-                font-family: 'Courier New', Courier, monospace;
-            }
-            .ozel-tablo {
-                width: 100%;
-                border-collapse: collapse; 
-            }
-            .ozel-tablo th, .ozel-tablo td {
-                border: 1px solid #8b7d6b; 
-                padding: 5px;
-                text-align: center;
-                height: 35px;
-            }
-            .baslik-hucre {
-                border-bottom: 3px double #2c1e12 !important;
-                font-weight: 900;
-                font-size: 1.1em;
-                text-transform: uppercase;
-                background-color: rgba(44, 30, 18, 0.05);
-            }
-            .sol-baslik {
-                text-align: left;
-                padding-left: 10px;
-                width: 30%;
-            }
-            .oyun-adi {
-                font-weight: bold;
-                text-align: left;
-                padding-left: 10px;
-            }
-            .koz-ayrac {
-                background-color: #2c1e12;
-                color: #fdfbf7;
-                font-weight: bold;
-                letter-spacing: 2px;
-                height: 30px !important;
-            }
-        </style>
-        """
-
-        # --- HTML BİRLEŞTİRME VE BASMA ---
-        full_html = f"""
-        {css_style}
-        <div class="parsom-kagidi">
-            <h1 style="text-align:center; color:#8b0000; margin-top:0; border-bottom: 2px solid #8b0000; padding-bottom:10px;">KRALİYET DEFTERİ</h1>
-            <table class="ozel-tablo">
-                {table_rows}
-            </table>
+        # --- HEPSİNİ BİRLEŞTİR VE BAS ---
+        final_html = f"""
+        {style_block}
+        <div class="parsom-kutu">
+            <h1 class="baslik">KRALİYET DEFTERİ</h1>
+            {table_html}
         </div>
         """
 
-        # unsafe_allow_html=True ile HTML'i kod değil görüntü olarak işlemesini sağlıyoruz
-        st.markdown(full_html, unsafe_allow_html=True)
+        st.markdown(final_html, unsafe_allow_html=True)
 
+        # Geri Dön
         st.write("")
         if st.button("Geri Dön", use_container_width=True):
             st.session_state["show_paper"] = False
