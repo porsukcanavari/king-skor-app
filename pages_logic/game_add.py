@@ -8,7 +8,7 @@ import re
 from utils.database import get_users_map, save_match_to_sheet
 from utils.config import OYUN_KURALLARI
 
-# --- GÜVENLİ IMPORT ---
+# --- GÜVENLİ IMPORT (Hata yönetimi ile) ---
 try:
     import google.generativeai as genai
     from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -31,25 +31,6 @@ if HAS_GENAI:
     except:
         pass
 
-# --- YARDIMCI: ÇALIŞAN MODELİ BUL ---
-def get_working_model():
-    """
-    Kullanıcının API anahtarının izin verdiği ve 'generateContent' destekleyen
-    ilk geçerli modeli bulur. Deneme yanılma yapar.
-    """
-    # Öncelik sırasına göre modeller
-    candidates = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-pro",
-        "gemini-pro-vision",  # Eski ama sağlam model
-        "gemini-1.0-pro-vision-latest"
-    ]
-    
-    # Direkt çalışan modeli döndür (Basit string olarak)
-    # Streamlit cache kullanmıyoruz ki her seferinde denemesin, hızlıca string dönsün
-    return candidates
-
 # --- METİN NORMALİZASYONU ---
 def normalize_str(text):
     text = str(text).lower()
@@ -60,77 +41,66 @@ def normalize_str(text):
 
 # --- YAPAY ZEKA FONKSİYONU ---
 def extract_scores_from_image(image):
-    if not HAS_GENAI or not API_KEY:
-        return None, "Kütüphane veya Anahtar Eksik"
+    # 1. Kütüphane Kontrolü
+    if not HAS_GENAI:
+        return None, "KRİTİK HATA: 'google-generativeai' kütüphanesi sunucuda yüklü değil! Lütfen 'requirements.txt' dosyasına 'google-generativeai' satırını ekleyin."
+    
+    # 2. API Key Kontrolü
+    if not API_KEY:
+        return None, "API Key bulunamadı."
 
-    last_error = ""
-    
-    # Olası modelleri sırayla dene
-    model_list = get_working_model()
-    
-    for model_name in model_list:
+    try:
+        # MODEL: FLASH (Hızlı ve Güvenilir)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+
+        prompt = """
+        GÖREV: Bu el yazısı King skor tablosunu oku. 4 Sütun (Oyuncu) var.
+        
+        AŞAĞIDAKİ FORMATTA SAF JSON DÖNDÜR:
+        {
+            "Rıfkı": [0, 320, 0, 0],
+            "Kız": [100, 0, 100, 200],
+            "Erkek": [50, 0, 0, 0],
+            "Kupa": [0, 0, 0, 0],
+            "Son İki": [0, 0, 180, 0],
+            "El Almaz": [0, 50, 0, 0],
+            "Koz 1": [5, 3, 2, 3],
+            "Koz 2": [0, 0, 0, 0],
+            "Koz 3": [0, 0, 0, 0],
+            "Koz 4": [0, 0, 0, 0],
+            "Koz 5": [0, 0, 0, 0],
+            "Koz 6": [0, 0, 0, 0],
+            "Koz 7": [0, 0, 0, 0],
+            "Koz 8": [0, 0, 0, 0]
+        }
+        
+        KURALLAR:
+        1. Sadece sayıları oku. Boşlukları 0 yap.
+        2. Satır isimlerini ("Rıfkı", "Kız" vb.) anahtar olarak kullan.
+        3. Asla Markdown (```json) kullanma.
+        """
+        
+        response = model.generate_content([prompt, image], safety_settings=safety_settings)
+        raw_text = response.text
+        clean_text = raw_text.replace("```json", "").replace("```", "").strip()
+        
         try:
-            # Modeli Hazırla
-            model = genai.GenerativeModel(model_name)
+            return json.loads(clean_text), f"Başarılı!\n{raw_text}"
+        except json.JSONDecodeError:
+            match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+            if match:
+                return json.loads(match.group()), f"Regex ile kurtarıldı.\n{raw_text}"
+            return None, f"JSON bozuk geldi:\n{raw_text}"
             
-            # Güvenlik Ayarları (Sansürsüz)
-            safety_settings = {
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-            }
-
-            prompt = """
-            GÖREV: Bu el yazısı King skor tablosunu oku. 4 Sütun (Oyuncu) var.
-            Her satırı bul ve 4 sayıyı oku.
-            
-            FORMAT (SAF JSON):
-            {
-                "Rıfkı": [0, 320, 0, 0],
-                "Kız": [100, 0, 100, 200],
-                "Erkek": [50, 0, 0, 0],
-                "Kupa": [0, 0, 0, 0],
-                "Son İki": [0, 0, 180, 0],
-                "El Almaz": [0, 50, 0, 0],
-                "Koz 1": [5, 3, 2, 3],
-                "Koz 2": [0, 0, 0, 0],
-                "Koz 3": [0, 0, 0, 0],
-                "Koz 4": [0, 0, 0, 0],
-                "Koz 5": [0, 0, 0, 0],
-                "Koz 6": [0, 0, 0, 0],
-                "Koz 7": [0, 0, 0, 0],
-                "Koz 8": [0, 0, 0, 0]
-            }
-            """
-            
-            # İsteği Gönder
-            response = model.generate_content([prompt, image], safety_settings=safety_settings)
-            raw_text = response.text
-            
-            # Başarılı olduysa buraya düşer, temizleyip dönelim
-            clean_text = raw_text.replace("```json", "").replace("```", "").strip()
-            
-            # JSON Parse
-            try:
-                data = json.loads(clean_text)
-                # Başarılı dönüş (Hangi modelin çalıştığını da rapora ekleyelim)
-                return data, f"Başarı! Kullanılan Model: {model_name}\n\n{raw_text}"
-            except json.JSONDecodeError:
-                # JSON bozuksa Regex dene
-                match = re.search(r'\{.*\}', clean_text, re.DOTALL)
-                if match:
-                    data = json.loads(match.group())
-                    return data, f"Başarı (Regex)! Kullanılan Model: {model_name}\n\n{raw_text}"
-                return None, f"Model {model_name} cevap verdi ama JSON bozuk:\n{raw_text}"
-
-        except Exception as e:
-            # Bu model hata verdiyse (404 vs), diğer modele geç
-            last_error = str(e)
-            continue
-    
-    # Döngü bitti ve hiçbiri çalışmadıysa
-    return None, f"Tüm modeller denendi, başarısız oldu. Son hata: {last_error}"
+    except Exception as e:
+        return None, f"Hata oluştu: {str(e)}"
 
 # --- STİL ---
 def inject_stylish_css():
@@ -164,10 +134,14 @@ def game_interface():
         if len(selected_players) == 4:
             st.write("---")
             uploaded_image = None
-            if API_KEY:
-                st.markdown("### 📸 FOTOĞRAFTAN DOLDUR (AUTO-MODEL)")
-                st.markdown('<div class="ai-info">🤖 <b>Akıllı Mod:</b> Sistem çalışan en iyi yapay zeka modelini otomatik bulup okuyacak.</div>', unsafe_allow_html=True)
+            
+            # API KEY KONTROLÜ
+            if HAS_GENAI and API_KEY:
+                st.markdown("### 📸 FOTOĞRAFTAN DOLDUR")
+                st.markdown('<div class="ai-info">🤖 <b>Sistem Hazır.</b> Fotoğrafı yükle, okumaya çalışacağım.</div>', unsafe_allow_html=True)
                 uploaded_image = st.file_uploader("Tablo Fotoğrafı", type=['png', 'jpg', 'jpeg'])
+            elif not HAS_GENAI:
+                st.error("⚠️ 'google-generativeai' kütüphanesi EKSİK! requirements.txt dosyasını güncelleyin.")
             
             btn_text = "FOTOĞRAFI TARA" if uploaded_image else "BOŞ TABLO AÇ"
             
@@ -177,8 +151,8 @@ def game_interface():
                 st.session_state["ai_json"] = None
                 st.session_state["ai_raw_text"] = None
                 
-                if uploaded_image and API_KEY:
-                    with st.spinner("🤖 Uygun model aranıyor ve analiz yapılıyor..."):
+                if uploaded_image and HAS_GENAI and API_KEY:
+                    with st.spinner("🤖 Analiz yapılıyor..."):
                         img = Image.open(uploaded_image)
                         json_data, raw_text = extract_scores_from_image(img)
                         st.session_state["ai_json"] = json_data
@@ -187,18 +161,14 @@ def game_interface():
                         if json_data:
                             st.success("Okuma Başarılı!")
                         else:
-                            st.warning("Okuma tamamlanamadı. Debug penceresine bakın.")
+                            st.warning("Okuma başarısız.")
 
                 st.session_state["sheet_open"] = True
                 
                 # --- VERİ DOLDURMA ---
                 data = []
                 ai_data = st.session_state.get("ai_json", {}) or {}
-                
-                # Normalizasyon
-                normalized_ai_data = {}
-                for k, v in ai_data.items():
-                    normalized_ai_data[normalize_str(k)] = v
+                normalized_ai_data = {normalize_str(k): v for k, v in ai_data.items()}
 
                 def find_best_match(target_label):
                     target_norm = normalize_str(target_label)
@@ -250,9 +220,11 @@ def game_interface():
         st.markdown(f"## {st.session_state['match_info']['name']}")
         
         # DEBUG
-        with st.expander("🤖 DEBUG PENCERESİ (Yapay Zeka Raporu)", expanded=True):
-            st.text(st.session_state.get("ai_raw_text", "Henüz veri yok."))
-        
+        with st.expander("🤖 DEBUG PENCERESİ", expanded=True):
+            st.text(st.session_state.get("ai_raw_text", "Veri yok."))
+            if not HAS_GENAI:
+                st.error("Kütüphane eksik! requirements.txt'yi kontrol et.")
+
         # TABLO
         edited_df = st.data_editor(
             st.session_state["game_df"],
