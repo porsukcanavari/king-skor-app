@@ -15,27 +15,24 @@ except ImportError:
     HAS_GENAI = False
 
 # --- API AYARLARI ---
-# Kanka senin verdiğin anahtarı buraya gömdüm.
 MANUEL_API_KEY = "AIzaSyDp66e5Kxm3g9scKZxWKUdcuv6yeQcMgk0"
 
 API_KEY = None
 if HAS_GENAI:
     try:
-        # Önce secrets dosyasına bakar, yoksa senin verdiğin manuel anahtarı kullanır
         if "GOOGLE_API_KEY" in st.secrets:
             API_KEY = st.secrets["GOOGLE_API_KEY"]
         elif MANUEL_API_KEY:
             API_KEY = MANUEL_API_KEY
-            
         if API_KEY:
             genai.configure(api_key=API_KEY)
     except Exception as e:
-        print(f"API Yapılandırma Hatası: {e}")
+        print(f"API Hatası: {e}")
 
-# --- YAPAY ZEKA FONKSİYONU ---
-def extract_scores_from_image(image, player_names):
+# --- YAPAY ZEKA FONKSİYONU (YENİ SÜTUN MANTIĞI) ---
+def extract_scores_from_image(image):
     """
-    Fotoğrafı Gemini'ye gönderir, sütun sırasına göre verileri çeker.
+    İsimlere bakmaksızın, her oyun türü için [p1, p2, p3, p4] şeklinde liste döndürür.
     """
     if not HAS_GENAI or not API_KEY:
         return None
@@ -43,93 +40,57 @@ def extract_scores_from_image(image, player_names):
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         
-        # Sütun sırasını belirtiyoruz (Soldan sağa)
-        players_str = ", ".join([f"Sütun {i+1}: {p}" for i, p in enumerate(player_names)])
-        
-        prompt = f"""
+        prompt = """
         Sen uzman bir King kart oyunu skor tablosu okuyucususun.
-        Fotoğrafta 4 sütunlu bir tablo var.
-        
-        SÜTUN SAHİPLERİ (Soldan Sağa): {players_str}
+        Fotoğrafta 4 oyuncuya ait 4 sütunlu bir tablo var.
         
         GÖREV:
-        Tablodaki sayıları oku ve aşağıdaki JSON formatında döndür.
+        Satır satır oyunları oku ve her satır için soldan sağa 4 sütundaki değerleri bir LİSTE olarak ver.
+        İsimleri okumana gerek yok, sadece sayıların sırasını koru.
         
-        FORMAT:
-        {{
-          "Rıfkı": {{ "{player_names[0]}": 320, "{player_names[1]}": 0, "{player_names[2]}": 0, "{player_names[3]}": 0 }},
-          "Kız": {{ ... }},
-          "Erkek": {{ ... }},
-          "Kupa": {{ ... }},
-          "Son İki": {{ ... }},
-          "El Almaz": {{ ... }},
-          "Koz 1": {{ ... }},
-          ...
-          "Koz 8": {{ ... }}
-        }}
+        İSTENEN JSON FORMATI:
+        {
+          "Rıfkı": [320, 0, 0, 0],
+          "Kız": [0, 100, 0, 100],
+          "Erkek": [0, 0, 0, 0],
+          "Kupa": [0, 0, 0, 0],
+          "Son İki": [0, 0, 0, 0],
+          "El Almaz": [0, 0, 0, 0],
+          "Koz 1": [5, 3, 2, 3],
+          "Koz 2": [0, 0, 0, 0],
+          "Koz 3": [0, 0, 0, 0],
+          "Koz 4": [0, 0, 0, 0],
+          "Koz 5": [0, 0, 0, 0],
+          "Koz 6": [0, 0, 0, 0],
+          "Koz 7": [0, 0, 0, 0],
+          "Koz 8": [0, 0, 0, 0]
+        }
 
         KURALLAR:
-        1. İSİM EŞLEŞTİRME: Fotoğraftaki isimleri görmezden gel. Soldan 1. sütundaki sayıları "{player_names[0]}" anahtarına yaz. 2. sütunu "{player_names[1]}" anahtarına yaz. Sıralama KESİNLİKLE budur.
-        2. SAYILAR: Cezalar (Rıfkı, Kız vb.) için PUAN oku (Örn: 320, 50). Kozlar için EL SAYISI oku (Örn: 5, 3).
-        3. BOŞLUKLAR: Okunamayan, boş veya çizgi (-) olan yerleri 0 kabul et.
-        4. Sadece saf JSON döndür, markdown kullanma.
+        1. SADECE JSON döndür. Markdown yok.
+        2. Cezalar (Rıfkı, Kız vb.) için tabloda yazan PUANI al (Örn: 320, 50).
+        3. Kozlar (Koz 1..8) için tabloda yazan EL SAYISINI al (Örn: 5, 3).
+        4. Boş, okunamayan veya çizgi (-) olan yerlere 0 yaz.
+        5. Eğer bir oyun için satır bulamazsan [0, 0, 0, 0] döndür.
         """
         
         response = model.generate_content([prompt, image])
-        text = response.text
-        # Temizlik
-        text = text.replace("```json", "").replace("```", "").strip()
+        text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
         
     except Exception as e:
-        st.error(f"Yapay Zeka Okuma Hatası: {str(e)}")
+        st.error(f"AI Okuma Hatası: {str(e)}")
         return None
 
-# --- GÖRÜNÜM (STİL) ---
+# --- STİL ---
 def inject_stylish_css():
     st.markdown("""
     <style>
-        .stApp {
-            font-family: 'Courier New', Courier, monospace !important;
-            background-color: #fafafa !important;
-        }
-        h1, h2, h3 {
-            color: #8b0000 !important;
-            font-weight: 900 !important;
-            text-transform: uppercase;
-            border-bottom: 2px solid #8b0000;
-            padding-bottom: 10px;
-        }
-        div[data-testid="stDataFrame"] {
-            border: 2px solid #2c3e50 !important;
-            box-shadow: 5px 5px 15px rgba(0,0,0,0.1) !important;
-            border-radius: 5px;
-            background-color: white;
-        }
-        .error-box {
-            background-color: #fff5f5;
-            color: #c0392b;
-            padding: 10px;
-            border-left: 6px solid #c0392b;
-            margin-bottom: 5px;
-            font-weight: bold;
-            font-size: 14px;
-        }
-        div[data-testid="stButton"] button {
-            font-family: 'Courier New', Courier, monospace !important;
-            font-weight: bold !important;
-            border: 2px solid #000 !important;
-            border-radius: 0px !important;
-        }
-        .ai-info {
-            background-color: #e3f2fd;
-            color: #0d47a1;
-            padding: 10px;
-            border-radius: 5px;
-            border: 1px solid #90caf9;
-            font-size: 13px;
-            margin-bottom: 10px;
-        }
+        .stApp { font-family: 'Courier New', Courier, monospace !important; background-color: #fafafa !important; }
+        h1, h2, h3 { color: #8b0000 !important; border-bottom: 2px solid #8b0000; padding-bottom: 10px; }
+        div[data-testid="stDataFrame"] { border: 2px solid #2c3e50 !important; }
+        .error-box { background-color: #fff5f5; color: #c0392b; padding: 10px; border-left: 6px solid #c0392b; font-weight: bold; }
+        .ai-info { background-color: #e8f5e9; color: #2e7d32; padding: 10px; border: 1px solid #c8e6c9; border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -139,66 +100,58 @@ def game_interface():
     
     if "sheet_open" not in st.session_state: st.session_state["sheet_open"] = False
     
-    # --- AŞAMA 1: MAÇ KURULUMU ---
+    # --- AŞAMA 1: KURULUM ---
     if not st.session_state["sheet_open"]:
         st.header("📋 KRALİYET DEFTERİ")
-        
         c1, c2 = st.columns(2)
         with c1: match_name = st.text_input("Maç Adı", "King_Akşamı")
         with c2: match_date = st.date_input("Tarih", datetime.now())
         
         users = list(name_to_id.keys())
-        # Kullanıcıları seçtiriyoruz
-        selected_players = st.multiselect("MASADAKİ 4 KİŞİ (Fotoğraftaki sırayla seçin!):", users, max_selections=4)
+        
+        st.warning("⚠️ ÖNEMLİ: Oyuncuları fotoğraftaki kâğıtta SOLDAN SAĞA hangi sıradaysa öyle seçin!")
+        selected_players = st.multiselect("OYUNCU SIRASI (Soldan Sağa):", users, max_selections=4)
         
         if len(selected_players) == 4:
             st.write("---")
-            
-            # FOTOĞRAF YÜKLEME KISMI
             uploaded_image = None
             if API_KEY:
                 st.markdown("### 📸 FOTOĞRAFTAN DOLDUR")
-                st.markdown("""
-                <div class="ai-info">
-                    🤖 <b>Yapay Zeka Hazır!</b> Kağıdın fotoğrafını yükleyin, tabloyu otomatik dolduralım.
-                    Lütfen fotoğrafın net olduğundan emin olun.
-                </div>
-                """, unsafe_allow_html=True)
-                uploaded_image = st.file_uploader("Tablo Fotoğrafı Yükle", type=['png', 'jpg', 'jpeg'])
-            else:
-                st.warning("⚠️ API Key sorunu var, sadece manuel giriş yapılabilir.")
+                st.markdown('<div class="ai-info">🤖 <b>Sistem Hazır:</b> Fotoğrafı yükleyin, sütunları sırasıyla okuyup dolduracağım.</div>', unsafe_allow_html=True)
+                uploaded_image = st.file_uploader("Tablo Fotoğrafı", type=['png', 'jpg', 'jpeg'])
             
-            btn_text = "FOTOĞRAFI TARA VE TABLOYU AÇ" if uploaded_image else "BOŞ TABLO AÇ"
+            btn_text = "FOTOĞRAFI TARA VE AÇ" if uploaded_image else "BOŞ TABLO AÇ"
             
             if st.button(btn_text, type="primary", use_container_width=True):
                 st.session_state["current_players"] = selected_players
                 st.session_state["match_info"] = {"name": match_name, "date": match_date}
                 st.session_state["ai_raw_data"] = None
                 
-                # AI İŞLEME MANTIĞI
                 ai_data = {}
                 if uploaded_image and API_KEY:
-                    with st.spinner("🤖 Fotoğraf okunuyor, puanlar eşleştiriliyor..."):
+                    with st.spinner("🤖 Fotoğraf taranıyor..."):
                         img = Image.open(uploaded_image)
-                        res = extract_scores_from_image(img, selected_players)
+                        res = extract_scores_from_image(img) # Artık oyuncu ismi göndermiyoruz
                         if res:
                             ai_data = res
                             st.session_state["ai_raw_data"] = res
                             st.success("Okuma Başarılı!")
                         else:
-                            st.error("Fotoğraf okunamadı, boş tablo açılıyor.")
+                            st.error("Fotoğraf okunamadı.")
 
                 st.session_state["sheet_open"] = True
                 
-                # --- TABLO VERİSİNİ OLUŞTURMA ---
+                # --- VERİ DOLDURMA (SÜTUN BAZLI) ---
                 data = []
                 
-                # Veri bulma yardımcısı (Esnek arama)
-                def get_val(search_keys, player):
-                    for k in search_keys:
-                        if k in ai_data and player in ai_data[k]:
+                # Yardımcı fonksiyon: Listeden indexe göre puan çek
+                def get_score_by_index(game_keys, player_index):
+                    for key in game_keys:
+                        if key in ai_data and isinstance(ai_data[key], list):
                             try:
-                                return int(ai_data[k][player])
+                                # Listede yeterli eleman varsa al, yoksa 0
+                                if len(ai_data[key]) > player_index:
+                                    return int(ai_data[key][player_index])
                             except:
                                 return 0
                     return 0
@@ -211,18 +164,27 @@ def game_interface():
                     
                     for i in range(1, tekrar + 1):
                         label = oyun if tekrar == 1 else f"{oyun} {i}"
-                        # AI'da "Rıfkı" olarak ararız (1, 2 ayrımı olmayabilir)
+                        # AI genelde "Rıfkı" olarak döner, "Rıfkı 1" demez. Kök ismi de ara.
+                        keys_to_search = [label, oyun]
+                        
                         row = {"OYUN TÜRÜ": label, "HEDEF": hedef, "TÜR": "CEZA"}
-                        for p in selected_players:
-                            row[p] = get_val([label, oyun], p)
+                        
+                        # Her oyuncu için (index 0, 1, 2, 3) sırayla puanı çek
+                        for idx, p in enumerate(selected_players):
+                            row[p] = get_score_by_index(keys_to_search, idx)
+                            
                         data.append(row)
                 
                 # 2. KOZLAR
                 for i in range(1, 9):
                     label = f"KOZ {i}"
                     row = {"OYUN TÜRÜ": label, "HEDEF": 13, "TÜR": "KOZ"}
-                    for p in selected_players:
-                        row[p] = get_val([label], p)
+                    
+                    # Kozları genelde "Koz 1", "Koz 2" diye düzgün okur
+                    # Ama bazen "Koz" diye tek liste dönebilir (dikkatli olmak lazım)
+                    for idx, p in enumerate(selected_players):
+                         row[p] = get_score_by_index([label], idx)
+                         
                     data.append(row)
                 
                 df = pd.DataFrame(data)
@@ -236,81 +198,49 @@ def game_interface():
         players = st.session_state["current_players"]
         st.markdown(f"## {st.session_state['match_info']['name']}")
         
-        # Debug Alanı (İsteğe bağlı açılır)
         if st.session_state.get("ai_raw_data"):
-            with st.expander("🤖 Yapay Zeka Ne Okudu? (Tıkla Gör)"):
+            with st.expander("🤖 Yapay Zeka Ne Okudu? (Debug)"):
                 st.json(st.session_state["ai_raw_data"])
         
-        st.info("💡 **KONTROL ET:** Kırmızı ile işaretli satırlarda hata vardır. Lütfen düzeltip kaydedin.")
-        
-        # TABLO (EDİTÖR)
         edited_df = st.data_editor(
             st.session_state["game_df"],
             use_container_width=True,
             height=800,
             column_config={
-                "HEDEF": None, # Gizli
-                "TÜR": None,   # Gizli
-                **{p: st.column_config.NumberColumn(
-                    p, min_value=0, step=1, required=True, format="%d"
-                ) for p in players}
+                "HEDEF": None, "TÜR": None,
+                **{p: st.column_config.NumberColumn(p, min_value=0, step=1, format="%d") for p in players}
             }
         )
 
-        # HATA KONTROLÜ
         errors = []
         clean_rows = []
         col_totals = {p: 0 for p in players}
 
-        for index, row in edited_df.iterrows():
-            target = row["HEDEF"]
-            tur = row["TÜR"]
-            current_sum = sum([row[p] for p in players])
+        for idx, row in edited_df.iterrows():
+            tgt = row["HEDEF"]; tur = row["TÜR"]; cur = sum([row[p] for p in players])
             
-            # Sadece dolu satırları kontrol et
-            if current_sum > 0:
-                if current_sum != target:
-                    if tur == "KOZ":
-                        errors.append(f"⚠️ **{index}**: Toplam **13** el olmalı (Şu an: {current_sum})")
-                    else:
-                        errors.append(f"⚠️ **{index}**: Puan **{target}** olmalı (Şu an: {current_sum})")
+            if cur > 0:
+                if cur != tgt:
+                    msg = f"⚠️ {idx}: Toplam {tgt} olmalı ({cur})"
+                    errors.append(msg)
                 else:
-                    # Kayıt için hazırla
-                    row_data = [index]
+                    r_data = [idx]
                     for p in players:
-                        val = row[p]
-                        # Koz ise 50 ile çarp, Ceza ise -1 ile
-                        final_puan = val * 50 if tur == "KOZ" else val * -1
-                        row_data.append(final_puan)
-                        col_totals[p] += final_puan
-                    clean_rows.append(row_data)
+                        val = row[p] * (50 if tur == "KOZ" else -1)
+                        r_data.append(val); col_totals[p] += val
+                    clean_rows.append(r_data)
 
-        st.write("---")
-        
-        # Hataları Bas
         if errors:
-            for err in errors:
-                st.markdown(f"<div class='error-box'>{err}</div>", unsafe_allow_html=True)
-        
-        # Butonlar
+            for e in errors: st.markdown(f"<div class='error-box'>{e}</div>", unsafe_allow_html=True)
+            
         c1, c2 = st.columns([2, 1])
         with c1:
-            if st.button("💾 KAYDET VE BİTİR", type="primary", use_container_width=True, disabled=(len(errors) > 0)):
-                if not clean_rows:
-                    st.warning("Tablo boş, kaydedilecek veri yok.")
-                else:
-                    final_totals = ["TOPLAM"] + list(col_totals.values())
-                    header = ["OYUN TÜRÜ"] + [f"{p} (uid:{name_to_id.get(p,'?')})" for p in players]
-                    
-                    if save_match_to_sheet(header, clean_rows, final_totals):
-                        st.balloons()
-                        st.success("✅ MAÇ KAYDEDİLDİ!")
-                        st.session_state["sheet_open"] = False
-                        del st.session_state["game_df"]
-                        st.rerun()
-        
+            if st.button("💾 KAYDET", type="primary", use_container_width=True, disabled=bool(errors)):
+                if clean_rows:
+                    ft = ["TOPLAM"] + list(col_totals.values())
+                    hd = ["OYUN TÜRÜ"] + [f"{p} (uid:{name_to_id.get(p,'?')})" for p in players]
+                    if save_match_to_sheet(hd, clean_rows, ft):
+                        st.balloons(); st.session_state["sheet_open"] = False; del st.session_state["game_df"]; st.rerun()
         with c2:
-            if st.button("❌ İPTAL", use_container_width=True):
-                st.session_state["sheet_open"] = False
-                if "game_df" in st.session_state: del st.session_state["game_df"]
-                st.rerun()
+            if st.button("İPTAL", use_container_width=True):
+                st.session_state["sheet_open"] = False; st.rerun()
