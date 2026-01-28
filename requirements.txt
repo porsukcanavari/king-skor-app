@@ -5,3 +5,4 @@ pandas>=2.0.0
 plotly>=5.17.0
 streamlit-tags>=0.1.0
 matplotlib>=3.7.0
+google-generativeai
