@@ -16,6 +16,7 @@ except ImportError:
     HAS_GENAI = False
 
 # --- API AYARLARI ---
+# Senin verdiğin anahtar burada
 MANUEL_API_KEY = "AIzaSyDp66e5Kxm3g9scKZxWKUdcuv6yeQcMgk0"
 
 API_KEY = None
@@ -30,76 +31,77 @@ if HAS_GENAI:
     except:
         pass
 
-# --- METİN TEMİZLEME (Eşleşme Garantisi İçin) ---
+# --- METİN NORMALİZASYONU ---
 def normalize_key(text):
-    """Türkçe karakterleri ve boşlukları temizler: 'Erkek 1' -> 'erkek1'"""
-    text = text.lower()
+    """Türkçe karakterleri ve boşlukları temizler: 'Rıfkı' -> 'rifki'"""
+    text = str(text).lower()
     replacements = {'ı': 'i', 'ğ': 'g', 'ü': 'u', 'ş': 's', 'ö': 'o', 'ç': 'c', ' ': ''}
     for old, new in replacements.items():
         text = text.replace(old, new)
     return text
 
-# --- YAPAY ZEKA FONKSİYONU ---
+# --- YAPAY ZEKA FONKSİYONU (MODEL GÜNCELLENDİ: PRO) ---
 def extract_scores_from_image(image):
     if not HAS_GENAI or not API_KEY:
         return None
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # BURASI DEĞİŞTİ: FLASH YERİNE PRO KULLANIYORUZ (DAHA AKILLI)
+        model = genai.GenerativeModel('gemini-1.5-pro')
         
-        # Beklenen tüm satır başlıklarını oluşturuyoruz
-        expected_keys = []
-        for oyun, kural in OYUN_KURALLARI.items():
-            if "Koz" in oyun: continue
-            limit = kural['limit']
-            for i in range(1, limit + 1):
-                expected_keys.append(oyun if limit == 1 else f"{oyun} {i}")
-        for i in range(1, 9):
-            expected_keys.append(f"Koz {i}")
-
-        prompt = f"""
-        Sen bir OCR (Optik Karakter Tanıma) uzmanısın. King oyun kağıdını okuyacaksın.
-        Tabloda 4 sütun (4 oyuncu) var.
+        prompt = """
+        Sen çok yetenekli bir OCR uzmanısın. El yazısıyla yazılmış King İskambil Oyunu skor tablosunu okuyacaksın.
+        Tabloda 4 SÜTUN (4 oyuncu) var. Satırlar ise oyun türleridir.
         
         GÖREV:
-        Aşağıdaki listedeki her bir oyun türü için, tablodan o satırı bul ve 4 oyuncunun puanlarını/el sayılarını liste olarak ver.
+        Fotoğrafı analiz et. Her oyun satırını bul ve karşısındaki 4 oyuncunun puanını/el sayısını oku.
         
-        BEKLENEN OYUN SATIRLARI:
-        {", ".join(expected_keys)}
+        İPUÇLARI:
+        - "Rıfkı" satırında genelde 320, 0, 0, 0 gibi puanlar olur.
+        - "Kız" satırında 100, 200 gibi puanlar olur.
+        - "Koz" satırlarında 13'e tamamlanan küçük sayılar (5, 3, 2, 3 gibi) olur.
+        - Eğer bir hücrede çizgi (-), nokta (.) veya boşluk varsa onu 0 kabul et.
         
-        ÇIKTI FORMATI (SADECE JSON):
-        {{
+        Lütfen cevabı SADECE şu JSON formatında ver:
+        {
             "Rıfkı": [p1, p2, p3, p4],
             "Kız": [p1, p2, p3, p4],
             "Erkek 1": [p1, p2, p3, p4],
             "Erkek 2": [p1, p2, p3, p4],
-            ...
-            "Koz 1": [el1, el2, el3, el4]
-        }}
+            "Kupa": [p1, p2, p3, p4],
+            "Son İki": [p1, p2, p3, p4],
+            "El Almaz": [p1, p2, p3, p4],
+            "Koz 1": [el1, el2, el3, el4],
+            "Koz 2": [el1, el2, el3, el4],
+            "Koz 3": [el1, el2, el3, el4],
+            "Koz 4": [el1, el2, el3, el4],
+            "Koz 5": [el1, el2, el3, el4],
+            "Koz 6": [el1, el2, el3, el4],
+            "Koz 7": [el1, el2, el3, el4],
+            "Koz 8": [el1, el2, el3, el4]
+        }
         
-        KURALLAR:
-        1. Listeler KESİNLİKLE 4 elemanlı olmalı (tam sayı).
-        2. Cezalarda (Rıfkı, Kız, Erkek, Kupa, Son İki, El Almaz) tablodaki PUANI oku (320, 50, 40 gibi).
-        3. Kozlarda (Koz 1...8) tablodaki EL SAYISINI oku (5, 3, 2 gibi).
-        4. Eğer bir satırı bulamazsan veya boşsa [0, 0, 0, 0] döndür.
-        5. Satır isimlerini tam olarak benim verdiğim gibi ("Erkek 1" gibi) kullan.
+        ÖNEMLİ:
+        - Sadece JSON döndür. Başka kelime etme.
+        - Satır isimlerini tahmin etmeye çalış, el yazısı olduğu için "Rifki", "Rfk" gibi yazılmış olabilir, sen doğrusunu (yukarıdaki anahtarları) kullan.
         """
         
         response = model.generate_content([prompt, image])
-        text = response.text.replace("```json", "").replace("```", "").strip()
+        text = response.text
         
-        # Bazen AI json'ı tam kapatamaz, basit fix
-        if not text.endswith("}"): text += "}"
-            
+        # Temizlik
+        text = text.replace("```json", "").replace("```", "").strip()
+        
+        # Olası hatalı virgülleri temizle (Json parse hatasını önlemek için)
+        text = re.sub(r",\s*}", "}", text) 
+        
         return json.loads(text)
         
     except Exception as e:
-        st.error(f"AI Hatası: {str(e)}")
-        # Debug için hatayı gösterelim
-        st.write(f"Raw Response: {response.text if 'response' in locals() else 'No response'}")
+        st.error(f"AI Okuma Hatası: {str(e)}")
         return None
 
-# --- STİL ---
+# --- CSS STİLİ ---
 def inject_stylish_css():
     st.markdown("""
     <style>
@@ -107,7 +109,7 @@ def inject_stylish_css():
         h1, h2, h3 { color: #8b0000 !important; border-bottom: 2px solid #8b0000; padding-bottom: 10px; }
         div[data-testid="stDataFrame"] { border: 2px solid #2c3e50 !important; }
         .error-box { background-color: #fff5f5; color: #c0392b; padding: 10px; border-left: 6px solid #c0392b; font-weight: bold; }
-        .ai-info { background-color: #e8f5e9; color: #2e7d32; padding: 10px; border: 1px solid #c8e6c9; border-radius: 5px; }
+        .ai-info { background-color: #e8f5e9; color: #2e7d32; padding: 10px; border: 1px solid #c8e6c9; border-radius: 5px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -125,15 +127,15 @@ def game_interface():
         with c2: match_date = st.date_input("Tarih", datetime.now())
         
         users = list(name_to_id.keys())
-        st.warning("⚠️ Lütfen oyuncuları fotoğraftaki kâğıtta SOLDAN SAĞA hangi sıradaysa öyle seçin!")
+        st.warning("⚠️ Lütfen oyuncuları kâğıtta **SOLDAN SAĞA** hangi sıradaysa öyle seçin!")
         selected_players = st.multiselect("OYUNCU SIRASI (Soldan Sağa):", users, max_selections=4)
         
         if len(selected_players) == 4:
             st.write("---")
             uploaded_image = None
             if API_KEY:
-                st.markdown("### 📸 FOTOĞRAFTAN DOLDUR")
-                st.markdown('<div class="ai-info">🤖 <b>Sistem Hazır.</b></div>', unsafe_allow_html=True)
+                st.markdown("### 📸 FOTOĞRAFTAN DOLDUR (PRO MOD)")
+                st.markdown('<div class="ai-info">🤖 <b>Gemini 1.5 PRO Devrede!</b> Fotoğrafı yükle, el yazısını söksün.</div>', unsafe_allow_html=True)
                 uploaded_image = st.file_uploader("Tablo Fotoğrafı", type=['png', 'jpg', 'jpeg'])
             
             btn_text = "FOTOĞRAFI TARA VE AÇ" if uploaded_image else "BOŞ TABLO AÇ"
@@ -143,41 +145,38 @@ def game_interface():
                 st.session_state["match_info"] = {"name": match_name, "date": match_date}
                 st.session_state["ai_raw_data"] = None
                 
-                ai_data = {}
+                ai_data_normalized = {} # Normalize edilmiş anahtarlarla saklayacağız
+                
                 if uploaded_image and API_KEY:
-                    with st.spinner("🤖 Analiz ediliyor..."):
+                    with st.spinner("🤖 PRO Model analiz ediyor (Biraz sürebilir)..."):
                         img = Image.open(uploaded_image)
                         res = extract_scores_from_image(img)
                         if res:
                             st.session_state["ai_raw_data"] = res
-                            # Normalizasyon sözlüğü oluştur (Keys: normalized -> Values: list)
-                            ai_data = {normalize_key(k): v for k, v in res.items()}
-                            st.success("Okuma Tamamlandı!")
+                            # Normalizasyon (AI "Rıfkı" der, biz "rifki" yaparız)
+                            ai_data_normalized = {normalize_key(k): v for k, v in res.items()}
+                            st.success("Okuma Başarılı!")
                         else:
                             st.error("Okuma Başarısız.")
 
                 st.session_state["sheet_open"] = True
                 
-                # --- VERİ DOLDURMA ---
+                # --- VERİ DOLDURMA (ESNEK EŞLEŞTİRME) ---
                 data = []
                 
-                def get_row_values(label_orig):
-                    # Önce tam eşleşme dene, sonra normalize edilmiş dene
-                    norm_label = normalize_key(label_orig)
+                def get_vals_for_row(game_label):
+                    # 1. Tam isimle dene ("Rıfkı", "Koz 1")
+                    key = normalize_key(game_label)
+                    if key in ai_data_normalized:
+                        return ai_data_normalized[key]
                     
-                    vals = [0, 0, 0, 0] # Varsayılan
-                    
-                    if norm_label in ai_data:
-                        raw_list = ai_data[norm_label]
-                        # Listeyi tam sayıya çevir ve 4'e tamamla
-                        try:
-                            vals = [int(str(x).strip()) if str(x).strip().isdigit() else 0 for x in raw_list]
-                        except:
-                            vals = [0, 0, 0, 0]
-                            
-                    # Eğer liste 4 kişiden kısaysa doldur
-                    while len(vals) < 4: vals.append(0)
-                    return vals[:4] # 4'ten uzunsa kes
+                    # 2. Oyunun kök adıyla dene ("Rıfkı 1" -> "rifki")
+                    # (Çünkü AI genelde "Rıfkı 1" demez, direkt "Rıfkı" der)
+                    root_name = normalize_key(game_label.split(" ")[0])
+                    if root_name in ai_data_normalized:
+                        return ai_data_normalized[root_name]
+                        
+                    return [0, 0, 0, 0]
 
                 # 1. CEZALAR
                 for oyun, kural in OYUN_KURALLARI.items():
@@ -187,21 +186,31 @@ def game_interface():
                     
                     for i in range(1, tekrar + 1):
                         label = oyun if tekrar == 1 else f"{oyun} {i}"
-                        row_vals = get_row_values(label)
+                        
+                        # Yapay zekadan gelen listeyi ([320, 0, 0, 0] gibi) al
+                        vals = get_vals_for_row(label)
+                        
+                        # Listeyi 4 kişiye tamamla ve sayı olduğundan emin ol
+                        vals = [int(x) if str(x).isdigit() else 0 for x in vals]
+                        while len(vals) < 4: vals.append(0)
                         
                         row = {"OYUN TÜRÜ": label, "HEDEF": hedef, "TÜR": "CEZA"}
                         for idx, p in enumerate(selected_players):
-                            row[p] = row_vals[idx]
+                            row[p] = vals[idx] # Sırayla dağıt
                         data.append(row)
                 
                 # 2. KOZLAR
                 for i in range(1, 9):
                     label = f"KOZ {i}"
-                    row_vals = get_row_values(label)
+                    vals = get_vals_for_row(label)
+                    
+                    # Listeyi 4 kişiye tamamla
+                    vals = [int(x) if str(x).isdigit() else 0 for x in vals]
+                    while len(vals) < 4: vals.append(0)
                     
                     row = {"OYUN TÜRÜ": label, "HEDEF": 13, "TÜR": "KOZ"}
                     for idx, p in enumerate(selected_players):
-                        row[p] = row_vals[idx]
+                        row[p] = vals[idx]
                     data.append(row)
                 
                 df = pd.DataFrame(data)
@@ -215,12 +224,12 @@ def game_interface():
         players = st.session_state["current_players"]
         st.markdown(f"## {st.session_state['match_info']['name']}")
         
-        # DEBUG KUTUSU (AÇIK GELSİN Kİ GÖRELİM)
+        # Debug Alanı
         if st.session_state.get("ai_raw_data"):
-            st.info("👇 Yapay Zeka bu verileri okudu. Eğer burası boşsa veya 0 ise fotoğraf net değildir.")
-            with st.expander("🤖 RAW VERİ (DEBUG)", expanded=True):
+            with st.expander("🤖 Yapay Zeka Ne Okudu? (Tıkla Gör)"):
                 st.json(st.session_state["ai_raw_data"])
         
+        # Tablo
         edited_df = st.data_editor(
             st.session_state["game_df"],
             use_container_width=True,
