@@ -5,58 +5,41 @@ from datetime import datetime
 from utils.database import get_users_map, save_match_to_sheet
 from utils.config import OYUN_KURALLARI
 
-# --- SADECE GÖRÜNÜMÜ GÜZELLEŞTİREN CSS ---
+# --- GÖRÜNÜM CSS (AYNI KALDI) ---
 def inject_stylish_css():
     st.markdown("""
     <style>
-        /* 1. GENEL YAZI TİPİ (DAKTİLO MODU) */
         .stApp {
             font-family: 'Courier New', Courier, monospace !important;
-            background-color: #fafafa !important; /* Çok hafif kırık beyaz, göz yormaz */
+            background-color: #fafafa !important;
         }
-
-        /* 2. BAŞLIKLAR (King Ruhu) */
         h1, h2, h3 {
-            color: #8b0000 !important; /* Koyu Bordo */
+            color: #8b0000 !important;
             font-weight: 900 !important;
             text-transform: uppercase;
-            letter-spacing: 1px;
             border-bottom: 2px solid #8b0000;
             padding-bottom: 10px;
-            margin-bottom: 20px;
         }
-
-        /* 3. TABLO (DATA EDITOR) MAKYAJI */
         div[data-testid="stDataFrame"] {
-            border: 2px solid #2c3e50 !important; /* Koyu Lacivert Çerçeve */
-            box-shadow: 5px 5px 15px rgba(0,0,0,0.1) !important; /* Hafif Gölge */
+            border: 2px solid #2c3e50 !important;
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.1) !important;
             border-radius: 5px;
             background-color: white;
         }
-
-        /* 4. HATA KUTULARI (Daha Şık) */
         .error-box {
             background-color: #fff5f5;
             color: #c0392b;
             padding: 15px;
-            border-left: 6px solid #c0392b; /* Sol tarafa kalın kırmızı çizgi */
+            border-left: 6px solid #c0392b;
             margin-bottom: 10px;
             font-weight: bold;
             font-size: 14px;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
         }
-
-        /* 5. BUTONLAR */
         div[data-testid="stButton"] button {
             font-family: 'Courier New', Courier, monospace !important;
             font-weight: bold !important;
-            border-radius: 0px !important; /* Köşeli butonlar */
             border: 2px solid #000 !important;
-        }
-        
-        /* Bilgi Kutusu */
-        .stAlert {
-            font-family: 'Courier New', Courier, monospace !important;
+            border-radius: 0px !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -71,40 +54,41 @@ def game_interface():
     if not st.session_state["sheet_open"]:
         st.header("📋 KRALİYET DEFTERİ: YENİ MAÇ")
         
-        # Kutuları yan yana alalım
         c1, c2 = st.columns(2)
         with c1: match_name = st.text_input("Maç Adı", "King_Akşamı")
         with c2: match_date = st.date_input("Tarih", datetime.now())
         
-        st.write("---") # Ayırıcı çizgi
-        
+        st.write("---")
         users = list(name_to_id.keys())
         selected_players = st.multiselect("MASADAKİ 4 KİŞİYİ SEÇİN:", users, max_selections=4)
         
         if len(selected_players) == 4:
-            st.write("") # Boşluk
+            st.write("")
             if st.button("DEFTERİ AÇ", type="primary", use_container_width=True):
                 st.session_state["current_players"] = selected_players
                 st.session_state["match_info"] = {"name": match_name, "date": match_date}
                 st.session_state["sheet_open"] = True
                 
-                # --- VERİ HAZIRLIĞI (Mantık aynı) ---
+                # --- VERİ HAZIRLIĞI ---
                 data = []
-                # Cezalar
+                
+                # 1. CEZALAR (Hedef = Toplam Puan)
                 for oyun, kural in OYUN_KURALLARI.items():
                     if "Koz" in oyun: continue
                     tekrar = kural['limit']
-                    hedef_puan = kural['adet'] * kural['puan'] 
+                    # Cezalarda toplam puan kontrolü yapacağız (Örn: Rıfkı = 320)
+                    hedef = kural['adet'] * kural['puan'] 
                     
                     for i in range(1, tekrar + 1):
                         label = oyun if tekrar == 1 else f"{oyun} {i}"
-                        row = {"OYUN TÜRÜ": label, "HEDEF": hedef_puan}
+                        row = {"OYUN TÜRÜ": label, "HEDEF": hedef, "TÜR": "CEZA"}
                         for p in selected_players: row[p] = 0
                         data.append(row)
                 
-                # Kozlar
+                # 2. KOZLAR (Hedef = 13 El)
                 for i in range(1, 9):
-                    row = {"OYUN TÜRÜ": f"KOZ {i}", "HEDEF": 650}
+                    # Kozlarda toplam 13 el olduğu için hedef 13
+                    row = {"OYUN TÜRÜ": f"KOZ {i}", "HEDEF": 13, "TÜR": "KOZ"}
                     for p in selected_players: row[p] = 0
                     data.append(row)
                 
@@ -118,11 +102,14 @@ def game_interface():
     else:
         players = st.session_state["current_players"]
         
-        # Başlık ve Tarih
         st.markdown(f"## {st.session_state['match_info']['name']}")
-        st.caption(f"📅 Tarih: {st.session_state['match_info']['date'].strftime('%d.%m.%Y')}")
         
-        st.info("💡 DİKKAT: Direkt **PUAN** giriniz. (Örn: Rıfkı yiyene 320, El almazda el başına 50).")
+        # Kullanıcıya net talimatlar
+        st.info("""
+        📝 **NASIL DOLDURULUR?**
+        - **CEZALAR:** Puanı direkt yazın (Örn: Rıfkı yiyene **320**, Kız yiyene **100**). **Eksi koymanıza gerek yok.**
+        - **KOZLAR:** Sadece alınan **EL SAYISINI** (Adet) yazın (Örn: **5** el aldı). Sistem 50 ile çarpacak.
+        """)
         
         # --- EDİTÖR ---
         edited_df = st.data_editor(
@@ -131,12 +118,13 @@ def game_interface():
             height=800,
             column_config={
                 "HEDEF": None, # Gizli sütun
+                "TÜR": None,   # Gizli sütun
                 **{p: st.column_config.NumberColumn(
                     p,
                     min_value=0,
-                    step=10, 
+                    step=1, 
                     required=True,
-                    format="%d" # Virgüllü göstermesin
+                    format="%d"
                 ) for p in players}
             }
         )
@@ -148,23 +136,45 @@ def game_interface():
 
         for index, row in edited_df.iterrows():
             target = row["HEDEF"]
+            tur = row["TÜR"]
+            
+            # Oyuncuların girdiklerini topla
             current_sum = sum([row[p] for p in players])
             
+            # Eğer satıra bir şeyler girilmişse (Hepsi 0 değilse)
             if current_sum > 0:
+                # KURAL KONTROLÜ
                 if current_sum != target:
-                    errors.append(f"⚠️ **{index}** HATASI: Masada **{target}** puan dönmeli, şu an **{current_sum}** yazıldı.")
+                    if tur == "KOZ":
+                        errors.append(f"⚠️ **{index}** HATASI: Toplam el sayısı **13** olmalı, şu an **{current_sum}** el girildi.")
+                    else:
+                        errors.append(f"⚠️ **{index}** HATASI: Dağıtılan toplam puan **{target}** olmalı, şu an **{current_sum}** girildi.")
                 else:
+                    # VERİ DOĞRU, KAYDA HAZIRLA
                     row_data = [index]
+                    
                     for p in players:
-                        row_data.append(row[p])
-                        col_totals[p] += row[p]
+                        girilen_deger = row[p]
+                        final_puan = 0
+                        
+                        # --- PUAN DÖNÜŞTÜRME BÜYÜSÜ ---
+                        if tur == "KOZ":
+                            # Koza el sayısı girildi, 50 ile çarpıp PUAN yap
+                            final_puan = girilen_deger * 50
+                        else:
+                            # Cezaya puan girildi, -1 ile çarpıp NEGATİF yap
+                            final_puan = girilen_deger * -1
+                        
+                        row_data.append(final_puan)
+                        col_totals[p] += final_puan
+                        
                     clean_rows.append(row_data)
 
-        st.write("---") # Alt çizgi
+        st.write("---")
         
         # Hataları Göster
         if errors:
-            st.markdown("### 🚫 HATA VAR")
+            st.markdown("### 🚫 DİKKAT")
             for err in errors:
                 st.markdown(f"<div class='error-box'>{err}</div>", unsafe_allow_html=True)
         
@@ -172,10 +182,10 @@ def game_interface():
         c1, c2 = st.columns([2, 1])
         
         with c1:
-            # Hata varsa buton kilitli
+            # Hata varsa kaydetme
             if st.button("💾 KAYDET VE BİTİR", type="primary", use_container_width=True, disabled=(len(errors) > 0)):
                 if not clean_rows:
-                    st.warning("Defter boş, henüz bir şey yazmadınız.")
+                    st.warning("Defter boş.")
                 else:
                     final_totals = ["TOPLAM"] + list(col_totals.values())
                     
@@ -184,6 +194,7 @@ def game_interface():
                         uid = name_to_id.get(p, "?")
                         header.append(f"{p} (uid:{uid})")
                     
+                    # Google Sheets'e Kaydet
                     if save_match_to_sheet(header, clean_rows, final_totals):
                         st.balloons()
                         st.success("✅ MAÇ BAŞARIYLA KAYDEDİLDİ!")
