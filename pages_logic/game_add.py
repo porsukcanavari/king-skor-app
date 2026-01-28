@@ -31,12 +31,22 @@ if HAS_GENAI:
     except:
         pass
 
-# --- DİNAMİK MODEL SEÇİCİ ---
+# --- DİNAMİK MODEL SEÇİCİ (2.5 EKLENDİ) ---
 def get_best_available_model():
     if not HAS_GENAI or not API_KEY:
         return None, "API Key yok."
-    # Senin çalışan kodundaki basit mantık
-    return "gemini-1.5-flash", "Flash Modeli Seçildi"
+
+    # Senin istediğin sıralama: Önce 2.5 Pro, sonra 2.5 Flash, sonra diğerleri
+    priority_models = [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+        "gemini-pro-vision"
+    ]
+    
+    # Direkt string liste döndürüyoruz, aşağıdaki fonksiyon sırayla deneyecek
+    return priority_models
 
 # --- METİN NORMALİZASYONU ---
 def normalize_str(text):
@@ -51,76 +61,76 @@ def extract_scores_from_image(image):
     if not HAS_GENAI:
         return None, "Kütüphane Eksik! requirements.txt güncelleyin."
 
-    model_name, log_msg = get_best_available_model()
+    # Model listesini al
+    model_list = get_best_available_model()
+    last_error = ""
+
+    # SADECE PROMPT DEĞİŞTİ (AYRIŞTIRMA İÇİN)
+    prompt = """
+    GÖREV: King skor tablosunu oku. 4 Sütun (Oyuncu) var.
     
-    try:
-        model = genai.GenerativeModel(model_name)
-        
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
+    ÖNEMLİ - SATIRLARI AYIR:
+    1. CEZALAR: "Rıfkı" ve "Erkek" oyunları tabloda genellikle alt alta İKİ SATIRDIR.
+       - Üstteki satırı "Rıfkı 1" (veya "Erkek 1") olarak al.
+       - Alttaki satırı "Rıfkı 2" (veya "Erkek 2") olarak al.
+       - ASLA bu iki satırı toplayıp tek satırda verme.
+    
+    2. KOZLAR: Kağıdın altındaki kare kutucukları (grid) oku.
+       - Sıralama: Sol Üst -> Sağ Üst -> Sol Alt -> Sağ Alt (Koz 1'den Koz 8'e kadar).
 
-        # --- İŞTE BURASI KRİTİK NOKTA: SENİN KAĞIT DÜZENİNE GÖRE PROMPT ---
-        prompt = """
-        GÖREV: Bu el yazısı King skor tablosunu oku. 4 Sütun (4 Oyuncu) vardır.
-        
-        ÖNEMLİ DETAYLAR (DİKKAT ET):
-        1. CEZALAR (Rıfkı, Erkek): Tabloda "Rıfkı" ve "Erkek" oyunları için ALT ALTA İKİ SATIR ayrılmıştır.
-           - Üstteki satırı "Rıfkı 1" (veya "Erkek 1") olarak al.
-           - Alttaki satırı "Rıfkı 2" (veya "Erkek 2") olarak al.
-           - Sakın bu iki satırı birleştirme!
-        
-        2. KOZLAR (KUTUCUKLAR): Kağıdın altında oyuncuların önünde kare kutucuklar (grid) vardır.
-           - Bu kutucuklar sırasıyla Koz oyunlarını temsil eder.
-           - Okuma Sırası: Sol Üst -> Sağ Üst -> Sol Alt -> Sağ Alt ... şeklinde git.
-           - Yani:
-             1. Kutu = Koz 1
-             2. Kutu = Koz 2
-             3. Kutu = Koz 3
-             4. Kutu = Koz 4 ... şeklinde 8'e kadar git.
+    AŞAĞIDAKİ FORMATTA JSON DÖNDÜR:
+    {
+        "Rıfkı 1": [0, 0, 0, 0],
+        "Rıfkı 2": [0, 0, 0, 0],
+        "Kız": [0, 0, 0, 0],
+        "Erkek 1": [0, 0, 0, 0],
+        "Erkek 2": [0, 0, 0, 0],
+        "Kupa": [0, 0, 0, 0],
+        "Son İki": [0, 0, 0, 0],
+        "El Almaz": [0, 0, 0, 0],
+        "Koz 1": [0, 0, 0, 0],
+        "Koz 2": [0, 0, 0, 0],
+        "Koz 3": [0, 0, 0, 0],
+        "Koz 4": [0, 0, 0, 0],
+        "Koz 5": [0, 0, 0, 0],
+        "Koz 6": [0, 0, 0, 0],
+        "Koz 7": [0, 0, 0, 0],
+        "Koz 8": [0, 0, 0, 0]
+    }
+    
+    KURALLAR:
+    - Boşlukları 0 yap.
+    - Sadece JSON ver.
+    """
 
-        AŞAĞIDAKİ FORMATTA SAF JSON DÖNDÜR:
-        {
-            "Rıfkı 1": [0, 320, 0, 0],
-            "Rıfkı 2": [0, 0, 320, 0],
-            "Kız": [100, 0, 100, 200],
-            "Erkek 1": [50, 0, 0, 0],
-            "Erkek 2": [0, 50, 0, 0],
-            "Kupa": [0, 0, 0, 0],
-            "Son İki": [0, 0, 180, 0],
-            "El Almaz": [0, 50, 0, 0],
-            "Koz 1": [5, 3, 2, 3],
-            "Koz 2": [0, 0, 0, 0],
-            "Koz 3": [0, 0, 0, 0],
-            "Koz 4": [0, 0, 0, 0],
-            "Koz 5": [0, 0, 0, 0],
-            "Koz 6": [0, 0, 0, 0],
-            "Koz 7": [0, 0, 0, 0],
-            "Koz 8": [0, 0, 0, 0]
-        }
-        
-        KURALLAR:
-        - Boşlukları 0 yap.
-        - Sadece JSON döndür.
-        """
-        
-        response = model.generate_content([prompt, image], safety_settings=safety_settings)
-        raw_text = response.text
-        clean_text = raw_text.replace("```json", "").replace("```", "").strip()
-        
+    for model_name in model_list:
         try:
-            return json.loads(clean_text), f"{log_msg}\n\nBaşarı!\n{raw_text}"
-        except:
-            match = re.search(r'\{.*\}', clean_text, re.DOTALL)
-            if match:
-                return json.loads(match.group()), f"{log_msg}\n\nRegex Başarısı.\n{raw_text}"
-            return None, f"{log_msg}\n\nJSON Bozuk:\n{raw_text}"
+            model = genai.GenerativeModel(model_name)
+            
+            safety_settings = {
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+            }
 
-    except Exception as e:
-        return None, f"HATA ({model_name}): {str(e)}\n\nLOG:\n{log_msg}"
+            response = model.generate_content([prompt, image], safety_settings=safety_settings)
+            raw_text = response.text
+            clean_text = raw_text.replace("```json", "").replace("```", "").strip()
+            
+            try:
+                # Başarılı olursa dön
+                return json.loads(clean_text), f"Başarı! Model: {model_name}\n{raw_text}"
+            except:
+                match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                if match:
+                    return json.loads(match.group()), f"Regex Başarısı! Model: {model_name}\n{raw_text}"
+        
+        except Exception as e:
+            last_error = str(e)
+            continue # Bu model çalışmadıysa sıradakine geç
+
+    return None, f"Hiçbir model çalışmadı. Son hata: {last_error}"
 
 # --- STİL ---
 def inject_stylish_css():
@@ -154,8 +164,8 @@ def game_interface():
             st.write("---")
             uploaded_image = None
             if HAS_GENAI and API_KEY:
-                st.markdown("### 📸 FOTOĞRAFTAN DOLDUR (KOZ KUTUCUKLARI)")
-                st.markdown('<div class="ai-info">🤖 <b>Ayrıştırıcı Mod:</b> Rıfkı 1/2 ve Koz Kutucukları (Sol Üst -> Sağ Alt) mantığıyla okunacak.</div>', unsafe_allow_html=True)
+                st.markdown("### 📸 FOTOĞRAFTAN DOLDUR (2.5 MODEL)")
+                st.markdown('<div class="ai-info">🤖 <b>Ayrıştırıcı Mod:</b> Rıfkı 1/2 ayrımı yapmayı dener.</div>', unsafe_allow_html=True)
                 uploaded_image = st.file_uploader("Tablo Fotoğrafı", type=['png', 'jpg', 'jpeg'])
             elif not HAS_GENAI:
                 st.error("⚠️ 'requirements.txt' DOSYASINI GÜNCELLEMEDİNİZ! Kütüphane eksik.")
@@ -185,23 +195,28 @@ def game_interface():
                 # --- VERİ DOLDURMA ---
                 data = []
                 ai_data = st.session_state.get("ai_json", {}) or {}
-                # Normalizasyon: rifki1, rifki2, erkek1, koz1 ...
+                # Normalizasyon
                 normalized_ai_data = {normalize_str(k): v for k, v in ai_data.items()}
 
                 def find_best_match(target_label):
-                    """
-                    target_label: 'Rıfkı 1', 'Koz 3' gibi gelir.
-                    """
-                    target_norm = normalize_str(target_label) # örn: 'rifki1'
+                    target_norm = normalize_str(target_label)
+                    target_root = normalize_str(target_label.split(" ")[0])
                     
                     # 1. Tam Eşleşme (Rıfkı 1 -> rifki1)
                     if target_norm in normalized_ai_data: 
                         return normalized_ai_data[target_norm]
                     
-                    # 2. Esnek Eşleşme
+                    # 2. İçinde Geçiyor mu?
                     for ai_key, val in normalized_ai_data.items():
                         if target_norm in ai_key: return val
 
+                    # 3. Kök Eşleşme (SON ÇARE): Kozlar hariç.
+                    # Eğer yapay zeka ayıramazsa ve sadece "Rıfkı" dönerse,
+                    # bunu sadece "Rıfkı 1"e (i=1) yaz, Rıfkı 2'ye yazma.
+                    if "koz" not in target_norm and target_root in normalized_ai_data:
+                         if "1" in target_label: # Sadece 1. satırsa doldur
+                             return normalized_ai_data[target_root]
+                    
                     return [0, 0, 0, 0]
 
                 for oyun, kural in OYUN_KURALLARI.items():
@@ -209,11 +224,8 @@ def game_interface():
                     tekrar = kural['limit']
                     hedef = kural['adet'] * kural['puan']
                     for i in range(1, tekrar + 1):
-                        # Burası 'Rıfkı 1', 'Rıfkı 2' veya 'Kız' üretir
                         label = oyun if tekrar == 1 else f"{oyun} {i}"
-                        
                         vals = find_best_match(label)
-                        
                         vals = [int(x) if str(x).isdigit() else 0 for x in vals]
                         while len(vals) < 4: vals.append(0)
                         
@@ -222,9 +234,8 @@ def game_interface():
                         data.append(row)
                 
                 for i in range(1, 9):
-                    label = f"KOZ {i}" # Koz 1, Koz 2...
+                    label = f"KOZ {i}"
                     vals = find_best_match(label)
-                    
                     vals = [int(x) if str(x).isdigit() else 0 for x in vals]
                     while len(vals) < 4: vals.append(0)
                     
@@ -258,7 +269,7 @@ def game_interface():
                 else:
                     r_data = [idx]
                     for p in players:
-                        # HESAPLAMA KISMI
+                        # Koz x 50, Ceza x -1 mantığı
                         val = row[p] * (50 if tur == "KOZ" else -1)
                         r_data.append(val); col_totals[p] += val
                     clean_rows.append(r_data)
