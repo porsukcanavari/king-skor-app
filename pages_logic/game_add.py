@@ -1,6 +1,77 @@
 # pages_logic/game_add.py (güncellenmiş kısımlar)
-# ... (import kısımları aynı)
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+from PIL import Image
+import json
+import re
+from utils.database import get_users_map, save_match_to_sheet
+from utils.config import OYUN_KURALLARI
 
+# --- GÜVENLİ IMPORT ---
+try:
+    import google.generativeai as genai
+    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
+
+# --- API AYARLARI ---
+MANUEL_API_KEY = "AIzaSyDp66e5Kxm3g9scKZxWKUdcuv6yeQcMgk0"
+
+API_KEY = None
+if HAS_GENAI:
+    try:
+        if "GOOGLE_API_KEY" in st.secrets:
+            API_KEY = st.secrets["GOOGLE_API_KEY"]
+        elif MANUEL_API_KEY:
+            API_KEY = MANUEL_API_KEY
+        if API_KEY:
+            genai.configure(api_key=API_KEY)
+    except:
+        pass
+
+# --- DİNAMİK MODEL SEÇİCİ (404 SAVAR) ---
+def get_best_available_model():
+    """
+    Sunucuda ve API anahtarında kullanılabilir olan İLK VİZYON modelini bulur.
+    """
+    if not HAS_GENAI or not API_KEY:
+        return None, "API Key yok."
+
+    log = []
+    found_model = None
+
+    try:
+        # Google'a sor: Hangi modellerim var?
+        for m in genai.list_models():
+            log.append(f"- {m.name}")
+            # 'generateContent' destekleyen ve 'vision' yeteneği olanlara bak
+            if 'generateContent' in m.supported_generation_methods:
+                if 'flash' in m.name or 'vision' in m.name or 'pro' in m.name:
+                    found_model = m.name
+                    # Flash varsa direkt onu al ve çık, yoksa diğerlerine bakmaya devam et
+                    if 'flash' in m.name:
+                        break
+        
+        if found_model:
+            return found_model, f"Otomatik Seçilen Model: {found_model}"
+        else:
+            # Hiçbir şey bulamazsa klasik olanı dene
+            return "gemini-1.5-flash", "Listede uygun model bulunamadı, varsayılan deneniyor.\nModeller: " + ", ".join(log)
+
+    except Exception as e:
+        return "gemini-1.5-flash", f"Model listesi alınamadı ({str(e)}), varsayılan deneniyor."
+
+# --- METİN NORMALİZASYONU ---
+def normalize_str(text):
+    text = str(text).lower()
+    replacements = {'ı': 'i', 'ğ': 'g', 'ü': 'u', 'ş': 's', 'ö': 'o', 'ç': 'c', ' ': ''}
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+# --- ANA FONKSİYON ---
 def extract_scores_from_image(image):
     if not HAS_GENAI:
         return None, "Kütüphane Eksik! requirements.txt güncelleyin."
@@ -93,7 +164,6 @@ def extract_scores_from_image(image):
         
         try:
             data = json.loads(clean_text)
-            # Eski formatı (dict) yeni formata (satır listesi) dönüştür
             if isinstance(data, dict) and "satirlar" in data:
                 return data, f"{log_msg}\n\nBaşarı (Yeni Format)!\n{raw_text}"
             elif isinstance(data, dict):
@@ -146,19 +216,34 @@ def extract_scores_from_image(image):
     except Exception as e:
         return None, f"HATA ({model_name}): {str(e)}\n\nLOG:\n{log_msg}"
 
-# ... (diğer kısımlar aynı)
-
+# --- ANA UYGULAMA FONKSİYONU ---
 def game_interface():
+    # CSS fonksiyonunu game_interface içine taşıyoruz
+    def inject_stylish_css():
+        st.markdown("""
+        <style>
+            .stApp { font-family: 'Courier New', Courier, monospace !important; background-color: #fafafa !important; }
+            h1, h2, h3 { color: #8b0000 !important; border-bottom: 2px solid #8b0000; padding-bottom: 10px; }
+            div[data-testid="stDataFrame"] { border: 2px solid #2c3e50 !important; }
+            .error-box { background-color: #fff5f5; color: #c0392b; padding: 10px; border-left: 6px solid #c0392b; font-weight: bold; }
+            .ai-info { background-color: #e8f5e9; color: #2e7d32; padding: 10px; border: 1px solid #c8e6c9; border-radius: 5px; margin-bottom: 10px; }
+        </style>
+        """, unsafe_allow_html=True)
+    
     inject_stylish_css()
+    
     id_to_name, name_to_id, _ = get_users_map()
     
-    if "sheet_open" not in st.session_state: st.session_state["sheet_open"] = False
+    if "sheet_open" not in st.session_state: 
+        st.session_state["sheet_open"] = False
     
     if not st.session_state["sheet_open"]:
         st.header("📋 KRALİYET DEFTERİ")
         c1, c2 = st.columns(2)
-        with c1: match_name = st.text_input("Maç Adı", "King_Akşamı")
-        with c2: match_date = st.date_input("Tarih", datetime.now())
+        with c1: 
+            match_name = st.text_input("Maç Adı", "King_Akşamı")
+        with c2: 
+            match_date = st.date_input("Tarih", datetime.now())
         
         users = list(name_to_id.keys())
         st.warning("⚠️ OYUNCULARI FOTOĞRAFTAKİ SIRAYLA (SOLDAN SAĞA) SEÇİN!")
@@ -264,32 +349,41 @@ def game_interface():
         return
 
     else:
-        # ... (aynı kalacak, devamı değişmedi)
         players = st.session_state["current_players"]
         st.markdown(f"## {st.session_state['match_info']['name']}")
         
         with st.expander("🤖 DEBUG PENCERESİ", expanded=True):
             st.text(st.session_state.get("ai_raw_text", "Veri yok."))
 
-        edited_df = st.data_editor(st.session_state["game_df"], use_container_width=True, height=800, column_config={"HEDEF": None, "TÜR": None, **{p: st.column_config.NumberColumn(p, min_value=0, step=1, format="%d") for p in players}})
+        edited_df = st.data_editor(st.session_state["game_df"], use_container_width=True, height=800, column_config={
+            "HEDEF": None, 
+            "TÜR": None, 
+            **{p: st.column_config.NumberColumn(p, min_value=0, step=1, format="%d") for p in players}
+        })
 
         errors = []
         clean_rows = []
         col_totals = {p: 0 for p in players}
 
         for idx, row in edited_df.iterrows():
-            tgt = row["HEDEF"]; tur = row["TÜR"]; cur = sum([row[p] for p in players])
+            tgt = row["HEDEF"]
+            tur = row["TÜR"]
+            cur = sum([row[p] for p in players])
+            
             if cur > 0:
-                if cur != tgt: errors.append(f"⚠️ {idx}: Toplam {tgt} olmalı ({cur})")
+                if cur != tgt: 
+                    errors.append(f"⚠️ {idx}: Toplam {tgt} olmalı ({cur})")
                 else:
                     r_data = [idx]
                     for p in players:
                         val = row[p] * (50 if tur == "KOZ" else -1)
-                        r_data.append(val); col_totals[p] += val
+                        r_data.append(val)
+                        col_totals[p] += val
                     clean_rows.append(r_data)
 
         if errors:
-            for e in errors: st.markdown(f"<div class='error-box'>{e}</div>", unsafe_allow_html=True)
+            for e in errors: 
+                st.markdown(f"<div class='error-box'>{e}</div>", unsafe_allow_html=True)
             
         c1, c2 = st.columns([2, 1])
         with c1:
@@ -297,6 +391,14 @@ def game_interface():
                 if clean_rows:
                     ft = ["TOPLAM"] + list(col_totals.values())
                     hd = ["OYUN TÜRÜ"] + [f"{p} (uid:{name_to_id.get(p,'?')})" for p in players]
-                    if save_match_to_sheet(hd, clean_rows, ft): st.balloons(); st.session_state["sheet_open"] = False; del st.session_state["game_df"]; st.rerun()
+                    if save_match_to_sheet(hd, clean_rows, ft): 
+                        st.balloons()
+                        st.session_state["sheet_open"] = False
+                        if "game_df" in st.session_state:
+                            del st.session_state["game_df"]
+                        st.rerun()
+        
         with c2:
-            if st.button("İPTAL", use_container_width=True): st.session_state["sheet_open"] = False; st.rerun()
+            if st.button("İPTAL", use_container_width=True): 
+                st.session_state["sheet_open"] = False
+                st.rerun()
