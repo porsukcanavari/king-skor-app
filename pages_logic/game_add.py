@@ -17,7 +17,7 @@ except ImportError:
     HAS_GENAI = False
 
 # --- API AYARLARI ---
-MANUEL_API_KEY = "AIzaSyDp66e5Kxm3g9scKZxWKUdcuv6yeQcMgk0"
+MANUEL_API_KEY = "AIzaSyDmKTcIelpuugHfxhgo8-1wjt8WzVc3Nq4"
 
 API_KEY = None
 if HAS_GENAI:
@@ -402,3 +402,4 @@ def game_interface():
             if st.button("İPTAL", use_container_width=True): 
                 st.session_state["sheet_open"] = False
                 st.rerun()
+
